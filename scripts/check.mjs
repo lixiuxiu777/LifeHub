@@ -1,15 +1,14 @@
 import fs from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-
-const root = new URL('../', import.meta.url);
-const files = ['dist/js/app.js','dist/js/model.js','dist/js/components.js','dist/js/icons.js','scripts/serve.mjs','scripts/check.mjs'];
-for (const file of files) {
-  const result = spawnSync(process.execPath, ['--check', fileURLToPath(new URL(file, root))], {encoding:'utf8'});
-  if (result.status !== 0) throw new Error(result.stderr || `Syntax check failed: ${file}`);
+const root=new URL('../',import.meta.url);
+for(const name of await fs.readdir(new URL('public/js/',root))){
+  if(!name.endsWith('.js'))continue;
+  const result=spawnSync(process.execPath,['--check',fileURLToPath(new URL(`public/js/${name}`,root))],{encoding:'utf8'});
+  if(result.status!==0)throw new Error(result.stderr);
 }
-const html = await fs.readFile(new URL('dist/index.html',root),'utf8');
-for (const [, asset] of html.matchAll(/(?:src|href)="\.\/([^"]+)"/g)) await fs.access(new URL(`dist/${asset}`,root));
-const manifest = JSON.parse(await fs.readFile(new URL('.openai/hosting.json',root),'utf8'));
-if (!manifest.project_id || manifest.static?.directory !== 'dist') throw new Error('Invalid Sites manifest');
-console.log('PASS: JavaScript syntax, HTML asset references, Sites static manifest.');
+const manifest=JSON.parse(await fs.readFile(new URL('.openai/hosting.json',root),'utf8'));
+if(manifest.project_id!=='appgprj_6ae2c732d5248191b59f80e856446929'||manifest.static||manifest.d1!=='DB')throw new Error('Invalid LifeHub Worker/D1 manifest');
+const typecheck=spawnSync(process.execPath,['node_modules/typescript/bin/tsc','--noEmit'],{cwd:fileURLToPath(root),encoding:'utf8'});
+if(typecheck.status!==0)throw new Error(typecheck.stdout+typecheck.stderr);
+console.log('PASS: client JavaScript syntax, TypeScript, same Sites identity and D1 Worker manifest.');

@@ -1,83 +1,71 @@
-# 当前 Sites 运行能力与数据方案
+# 第二阶段：存储、身份与一致性
 
-核对日期：2026-10-29。范围：当前安装的 Sites 1.1.2 技能、官方模板、工具契约与本次注册项目的返回状态。
+核对日期：2026-10-29。依据当前 Sites 1.1.2 技能、官方 Vinext starter、原生工具与实际本机 D1 测试。
 
-## 核对结果
+## 当前实现
 
-| 能力 | 当前环境支持情况 | 本阶段实际状态 |
-|---|---|---|
-| 静态站点 | 支持 HTML/CSS/JS 静态托管 | 已完成本机实现与预览，静态目录 dist |
-| 服务端逻辑 | 支持 Cloudflare Workers；提供 Vinext starter | 本阶段静态站没有服务端业务逻辑 |
-| 持久化数据库 | 支持 Cloudflare D1，通过 manifest 逻辑绑定配置 | 未绑定、未建表、无真实业务数据 |
-| 文件存储 | 支持 Cloudflare R2，服务端访问 | 未使用；后续有附件需求再启用 |
-| 身份验证 | Sites 平台提供 Sign in with ChatGPT 与服务端身份头 | 尚未集成业务鉴权，未验证线上登录 |
-| 访问控制 | Sites 原生访问策略，默认新站私有 | 已注册，返回 access_mode=custom；未扩大访问范围 |
-| 跨设备同步 | 可用同一 Sites 身份 + Workers API + D1 实现 | **尚未实现/验证**；不能因平台具备能力就宣称已经同步 |
-| 后台提醒、实时推送、离线冲突合并 | 不从上述能力推断自动支持 | 不在本阶段实现 |
+同一 LifeHub Site 已从静态站迁移为官方 Vinext / Cloudflare Workers 应用，清单使用 `d1: "DB"`，保留唯一 Site ID。未使用 R2，没有外部数据库或 AI API。
 
-注册结果确认：项目状态 active，live URL 为 null；初始版本数为 0。此处 active 仅代表项目注册状态，不代表网站已经部署。保存源代码或版本也不等于发布。线上 D1、鉴权与同步需要部署后独立验收。
-
-## 能力依据
-
-以下均为本机安装的 Sites 插件资料（从插件根目录起的相对路径）：
-
-- `skills/sites/SKILL.md`：静态站与 Vinext 工作流；Workers 服务端，128 MB isolate、HTTP 外联、不支持原始 TCP。
-- `skills/sites/references/storage.md`：D1 / R2 逻辑绑定、schema、迁移、local 与 hosted 数据库分离。
-- `skills/sites/references/identity-and-secrets.md`：平台身份头、服务端认证、私有站点、密钥处理。
-- `skills/sites/templates/vinext-starter/package.json`：React 19、Vinext/Vite、Cloudflare 插件、Drizzle ORM。
-- 原生 `create_site` / `get_site` / `save_site_version` 工具：注册、访问状态与不部署保存。
-
-未申请 API Key、未创建绕过登录 token、未更改访问策略。上述支持结论来自当前工具和模板；没有进行生产数据库写入探测。
-
-## 推荐架构（下一阶段实施）
-
-```text
-用户浏览器（桌面 / 手机）
-  → Sites 访问控制与 ChatGPT 登录
-  → Workers / Vinext API（校验身份、授权、参数）
-  → D1：用户隔离的业务记录与云端偏好
-  → R2：可选私有附件，仅经授权接口读写
-```
-
-不需要外部服务器或 Docker。使用官方 starter 保留 `sites()` 构建集成。切换服务端时移除当前 `static` 配置、显式声明 D1 `DB` 绑定，按官方 helper 构建；未使用的 R2 绑定保持 null，不提前创建资源。迁移通过 Drizzle 生成并审核后提交；不在请求处理中创建/改表。
-
-### 身份与访问隔离
-
-Sites 平台提供 `oai-authenticated-user-id`、email 等身份头。通过官方服务端 `getChatGPTUser()` 获取 ID，API 缺少身份返回 401，每次操作再次鉴权；页面可使用 `requireChatGPTUser()`。身份页面禁用静态共享缓存。
-
-使用站点内稳定的用户 ID 作为 `owner_id`。客户端不得提交并决定 owner_id；所有查询、更新、删除必须包含服务端身份对应的 owner 条件。email 只作可选显示字段，不作所有权主键。登录和退出使用平台顶层导航，不自行实现 OAuth 或模拟登录。上述身份头只在 Sites 可信部署边界使用，不把本地请求里随意传入的头当可信身份。
-
-个人模式保持站点所有者私有。未来引入多个使用者时，仍需数据行级授权，站点访问许可不能替代业务数据隔离。API 响应使用 private/no-store；可变更请求校验 Origin / CSRF、防止跨站写入。
-
-### 数据模型草案
-
-不在本阶段创建表，以下为规划：
-
-| 实体 | 关键字段 |
+| 项目 | 实现 |
 |---|---|
-| tasks | id, owner_id, title, status, priority, due_date, version, timestamps |
-| events | id, owner_id, title, start_at, end_at, timezone, version, timestamps |
-| expenses | id, owner_id, amount_minor, currency, category_id, spent_on, note, version, timestamps |
-| learning_plans | id, owner_id, title, target, progress, version, timestamps |
-| habits | id, owner_id, title, frequency, timezone, version, timestamps |
-| habit_checkins | id, owner_id, habit_id, local_date, timestamps |
-| collections | id, owner_id, title, url, note, tags, version, timestamps |
-| dashboard_preferences | owner_id, schema_version, theme, order_json, hidden_json, version, timestamps |
+| 业务记录与首页偏好 | D1 `lifehub_records`，十类带类型的记录 |
+| 统一访问层 | 客户端 DataStore → 同源 API → 服务端验证/授权 → D1 |
+| 生产身份 | Sites 原生 ChatGPT 登录；使用服务端稳定 userId |
+| 所有权 | owner_id 由服务端生成；所有读取、更新、删除与关联查询均校验 owner |
+| 本机开发 | 官方 loopback-only 模拟登录 + Miniflare D1，`.wrangler/state` 保存 |
+| 跨设备 | 仅真实私有部署的同一站点、同一 ChatGPT 账户共享 D1；本机库不跨设备 |
+| 浏览器存储 | 不保存业务记录与新偏好；只读取旧版 localStorage 布局供用户选择迁移 |
+| 文件与备份 | 用户主动下载 JSON；不写入源码、公共静态资源、公共存储或日志 |
 
-金额用最小币种单位整数存储，禁止浮点累计；显示时按币种格式化。时间点存 UTC，事件保留时区；整日待办与打卡保留本地日期，避免跨时区错日。habit_checkins 为 `(owner_id, habit_id, local_date)` 建唯一约束。为 owner_id 与常用日期查询建联合索引。所有枚举、文本长度、日期与金额范围均由服务端校验。
+本机已完成真实 Miniflare D1 读写与恢复测试。私有部署、生产鉴权和真实不同设备的验证状态应以最终交付回执为准；本机测试不能充当生产同步测试。
 
-### 同步策略
+## 数据模型
 
-第一版采用在线读写：写入服务端成功后再显示成功；进入页面、窗口重新获得焦点或点击刷新时重新获取。两台设备用同一站点登录身份读取同一份 D1 数据，即可形成跨设备持久化。它不等于实时推送或离线自动合并。
+每条记录统一包络：`id` UUID、`type`、`createdAt`、`updatedAt`、`version`、`data`。数据库额外保存不可由客户端指定的 owner_id 与关联 parent_id。
 
-更新携带 `version`，服务端条件更新；冲突返回 409，要求重新加载并核对，不静默覆盖。写入失败明确显示错误与重试，不能弹出假成功。下一阶段需要以真实部署完成：匿名请求拒绝、用户 A/B 隔离、写入后刷新仍在、另一台设备可读、并发冲突与失败重试测试。
+| 模型 | 业务字段 |
+|---|---|
+| Task | title, dueDate, priority, status, note |
+| CalendarEvent | title, startAt, endAt, timeZone, note |
+| Expense | title, amountMinor, currency, date, category, note |
+| Budget | month, amountMinor, currency, note |
+| LearningGoal | title, targetMinutes, status, note |
+| StudySession | title, goalId（可选）, date, minutes, note |
+| Habit | title, note |
+| HabitCheckIn | habitId, date, note |
+| Bookmark | title, url, tags, note |
+| DashboardPreference | theme, order, hidden, defaultView, dateFormat, timeFormat, timeZone |
 
-本机主题/布局偏好可继续用 localStorage 作缓存；登录后以云端偏好为持久化来源。首登迁移应显式提示，由用户选择是否采用本机布局，避免无声覆盖。
+学习记录可关联自己的学习目标，打卡必须关联自己的习惯。外键限制删除仍有子记录的目标/习惯；每用户仅一份 DashboardPreference，同习惯同日只能打卡一次，同币种同月只有一份预算。模型严格验证，未知字段、浮点最小货币单位、无效日期、危险链接均拒绝。
 
-## 备份、安全与替代方案
+当前采用带类型 JSON 记录表，统一 metadata / owner 索引，适合此阶段的统一管理。后续数据量增长时可按领域增加专门查询、日期索引、分页和聚合 API；不改变现有记录身份与所有权。
 
-目前只能导出/恢复界面偏好，无业务记录。后续提供经鉴权的 JSON/CSV 导出，含格式版本、导出时间、币种/时区和记录 ID；恢复先校验、显示数量、确认后执行。备份可能含敏感信息，按用户操作下载到本机，不放入 GitHub、dist、公共 R2 URL 或日志。
+## 金额与时间
 
-生产 API 不记录记录正文、消费金额、身份头、token；错误日志只保留必要错误码与请求标识。数据库迁移只提交 schema，不包含个人 seed。GitHub 仅用于代码版本管理，不承担个人数据备份。
+- amountMinor 为正整数，单笔上限 10^12 最小单位；CNY/USD/EUR 精度 2、JPY 精度 0、KWD 精度 3。
+- 输入先按十进制字符串解析为 BigInt，再验证范围转安全整数；不使用浮点解析相加。
+- 汇总采用 BigInt，显示通过 Intl 的整数格式部件与精确小数拼接；不同货币不混合，没有隐含汇率。
+- 时间点保存 ISO UTC；日程保留 IANA 时区。按用户时区计算今日与近期范围，包含跨午夜的持续事件。
+- 截止日、消费日、学习日、打卡日使用有效 YYYY-MM-DD 日期。日程墙上时间输入按所选时区转换，拒绝夏令时跳过/重复时段。
 
-如果后续账号的托管权限或部署条件使 D1/身份能力不可用，必须停止宣称云端同步：可先采用 IndexedDB 保存本机记录并由用户导出/导入迁移，明确标注“仅此设备”；或由用户下一步选择托管数据库并配置服务端认证。禁止用 localStorage 冒充云端数据库，禁止未经用户决定将敏感记录发送到外部服务。
+## 一致性与同步
+
+首页所有指标来自同一 DataStore 中服务器返回的记录：今日未完成任务、未来七日的日程、本月每币种支出/预算、目标关联学习分钟、本月学习时长、本周有打卡的天数、最近收藏。空数据库展示真实零值与空状态；未加载成功时不显示零值。
+
+写入成功才更新本机内存；不在联网失败时伪称已保存。进入页面、恢复窗口焦点、手动刷新会重取。无实时推送或离线队列。API 的版本条件更新避免覆盖其他页面的修改，409 时要求刷新核对。
+
+完整备份恢复在 D1 batch 事务中执行。每次增删改由数据库触发器更新用户 revision，恢复前比较预览 stateKey，并在事务内核对 revision，防止恢复预览后或恢复过程中并发写入被覆盖。任何模型、外键、唯一性或 revision 错误均回滚。
+
+## 安全边界
+
+生产身份头仅信任 Sites 托管边界，使用官方 `getChatGPTUser()`；匿名 API 返回 401。输入的 ownerId 会被拒绝，不允许客户端指定所有权。官方本机 mock 会剥离自带身份头，只有本机 cookie 可建立开发模拟身份；开发模拟认证不进入生产构建。
+
+写操作验证 Origin 与 JSON 类型。API 响应 private/no-store；Worker 设置 no-sniff/no-referrer。渲染用户文本时 HTML 转义；收藏 URL 仅允许无嵌入凭据的 http/https。业务层不记录记录正文、金额、身份头或凭据；不在请求处理中建表。
+
+迁移由 Drizzle 生成后审核；初次生成的 JSON 表达式索引 SQL 已在应用前修正，并在 SQLite 与本机 D1 验证。迁移包括 schema、索引、revision 触发器，不包含任何用户 seed。
+
+## 限制与替代方案
+
+本机开发库与线上 D1 完全分离，不自动上传测试记录。真正跨设备须使用已部署的私有站点及同一账户；不同 Site 或不同 ChatGPT 账户拥有不同身份空间。
+
+恢复上限 1000 条 / 2 MB，恢复时替换该账户全部数据，先导出备份。没有文件附件、定时提醒、实时推送或离线冲突合并。若托管权限导致生产 D1/身份不可用，应明确报告未启用云端同步，并保持本机开发库标识；不得静默改用 localStorage 宣称云同步。

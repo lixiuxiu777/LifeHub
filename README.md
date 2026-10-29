@@ -1,63 +1,77 @@
 # LifeHub
 
-生活，有序生长。个人生活仪表盘，V1 第一阶段。
+生活，有序生长。个人生活仪表盘，V1 第二阶段：统一数据与可配置首页。
 
-## 本阶段交付
+## 已实现
 
-- 七个导航入口：首页、待办与日程、消费、学习、习惯、收藏、设置。
-- 首页七张可配置卡片：待办、近期日程、消费摘要、学习、习惯、收藏、快速新增。
-- 浅色 / 深色 / 跟随系统，桌面侧栏、手机抽屉导航，键盘操作与模态弹窗。
-- 卡片显示、隐藏、上下排序；刷新后保留本机偏好。
-- 默认空状态；显式演示、加载、错误预览，演示不写入任何记录。
-- 界面偏好 JSON 导出、格式校验与确认后恢复。
+- 十类统一模型：Task、CalendarEvent、Expense、Budget、LearningGoal、StudySession、Habit、HabitCheckIn、Bookmark、DashboardPreference。
+- 每条记录有服务端 UUID、创建/更新时间与并发版本号；用户所有权由 ChatGPT 服务端身份决定。
+- 六类快速新增：待办、日程、消费、学习记录、习惯打卡、收藏。模块页可维护学习目标、习惯和预算，并编辑/删除记录。
+- 首页摘要从同一份真实记录计算；增删改成功后更新。不默认加入演示数据。
+- 卡片显示/隐藏/排序、默认视图、日期/时间格式、显示时区、主题与恢复默认布局，均保存在 D1。
+- 完整 JSON 备份、文件或粘贴恢复、恢复预览与确认、原子事务与失败回滚。
+- 桌面侧栏与手机导航；空状态、真实加载状态、错误/冲突提示。
 
-**没有实现业务记录 CRUD、提醒、真实打卡、云端登录或同步。** 业务模块入口明确显示后续开发范围，不提供假保存。默认首页的破折号表示“未接入”，不表示消费为零。
+无 AI API、无 API Key、无第三方追踪。代码仓库仅存放代码和数据库结构，禁止提交个人记录、备份、凭据或运行时数据库。
 
-## 本地运行
+## 运行与构建
 
-需要 Node.js 22+，无需安装依赖、无需 Docker、无需 API Key。
+Node.js >=22.13，使用 Sites 官方 Vinext / React / Vite / Cloudflare Workers starter。无需 Docker 或外部服务器。
 
 ```sh
-npm run dev
+npm ci --prefer-offline --no-audit --no-fund
+npm run build
 ```
 
-打开 http://127.0.0.1:4173 。预览服务仅绑定本机回环地址。关闭终端或按 Ctrl+C 停止。
+新克隆目录第一次启动 D1 本机数据库前，应用尚未执行的迁移（不要重复执行已应用 SQL）：
+
+```sh
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_new_talkback.sql
+npm run dev -- --hostname 127.0.0.1 --port 4173
+```
+
+打开 http://127.0.0.1:4173 ，点击“使用 ChatGPT 登录”。本机开发使用官方 starter 的模拟用户 `local_seedy`，界面明确标注本机开发库。**它不是真实云端登录，也不跨设备同步。** 本机持久化在忽略提交的 `.wrangler/state/`；服务重启后继续读取。
 
 ```sh
 npm run check
 ```
 
-检查 JS 语法、HTML 本地资源引用和 Sites 托管清单。
+执行客户端语法检查、TypeScript 检查与 Sites ID / D1 清单校验。Sites 工作流构建应使用插件 `build-site.mjs`，保留官方 `sites()` 集成。
 
-## 项目结构
+## 云端与身份
+
+继续使用同一 Site ID：`appgprj_6ae2c732d5248191b59f80e856446929`。清单的 `d1: "DB"` 绑定由 Sites 在部署时创建/连接；服务端数据与本机开发库彼此独立。
+
+私有部署使用 Sites 原生 ChatGPT 登录。API 缺少身份返回 401，写入校验同源 Origin，所有 SQL 按服务端 owner_id 过滤。跨设备使用**同一站点、同一 ChatGPT 账户**，共享同一 D1 数据。没有公开个人数据的业务接口，不将浏览器保存描述为云同步。
+
+进入页面、窗口重新获得焦点、手动刷新时读取服务器；没有实时推送、离线写入或离线冲突合并。失败保留错误，服务器确认前不显示保存成功。版本冲突返回 409，需刷新核对。完整方案见 [存储与同步](docs/STORAGE-AND-SYNC.md)。
+
+## 金额、时间与备份
+
+金额使用最小币种单位整数：CNY/USD/EUR 两位、JPY 零位、KWD 三位；拒绝额外小数与科学计数法。汇总采用 BigInt，按币种分别显示，不自动换汇。日程保存 UTC 时间点与时区；整日待办、消费、学习、打卡使用日期字符串。夏令时重复或不存在的输入要求修正。
+
+备份格式 `lifehub-backup` version 2，包含记录与 DashboardPreference，不包含 owner_id 或登录凭据。恢复最多 1000 条 / 2 MB，替换当前用户数据；服务端校验模型、关联和预览版本后原子执行。ID 与创建时间保留，更新时间/版本刷新；任一约束失败整体回滚。请先导出当前备份。
+
+第一阶段 localStorage 只作为旧布局显式迁移来源，不自动覆盖数据库配置。当前记录与新偏好均不写入 localStorage。
+
+## 结构
 
 ```text
-.openai/hosting.json      已注册的 Sites 项目，静态入口 dist
-dist/index.html          应用外壳、导航、弹窗容器
-dist/styles.css          设计令牌、组件、主题与响应式布局
-dist/js/model.js         模块/卡片定义、偏好验证、空数据契约
-dist/js/components.js    空状态/演示/加载/错误卡片
-dist/js/app.js           哈希导航、主题、布局配置、备份恢复
-dist/js/icons.js         本地 SVG 图标
-scripts/serve.mjs        仅本机的静态预览服务
-scripts/check.mjs        可重复执行的静态检查
-docs/                    运行能力、设计规范、验证记录
+app/                    受身份保护的页面与 records / restore API
+lib/domain.ts           十类模型、字段验证、关联与备份规则
+lib/records-service.ts  身份/所有权、CRUD、并发与原子恢复
+db/schema.ts            D1 / Drizzle schema
+drizzle/                已审核的 schema 迁移和元数据
+public/js/store.js      客户端统一数据访问层
+public/js/selectors.js  真实首页统计
+public/js/forms.js      统一新增/编辑表单
+public/js/views.js      首页、列表与设置
+public/js/money.js      精确金额解析与显示
+public/js/time.js       时区与格式处理
+public/styles.css      保留第一阶段设计系统并扩展表单
+worker/                 官方 Workers 入口
 ```
 
-本阶段采用 Sites 支持的无构建 HTML/CSS/ES Modules，减少初期依赖；`dist` 是当前源文件目录，不是自动生成的构建产物。后续服务端阶段应迁移到官方 Vinext starter，沿用 Site ID、设计令牌与组件契约，使用 Sites 官方构建集成。
+`dist` 从第二阶段起为忽略提交的构建产物；原静态源已迁移到 `public`。已有布局和 Site 身份保留。源代码持续推送至 https://github.com/lixiuxiu777/LifeHub.git 。
 
-## 数据与隐私
-
-localStorage 中只有 `lifehub.preferences.v1`（主题、卡片顺序、隐藏列表），**不是跨设备数据库**。演示预览仅驻留内存，刷新后回到空状态。页面无 AI API、分析追踪、第三方字体或外部图片请求。不采集个人记录，不记录敏感日志。
-
-导出文件只是界面偏好备份，**不是生活记录备份**。恢复只接受已知卡片 ID 和主题枚举，不把文件中的任意文本插入页面。业务数据导出入口尚未开放。
-
-运行能力与推荐方案见 [存储与同步方案](docs/STORAGE-AND-SYNC.md)，视觉与交互规范见 [设计规范](docs/DESIGN.md)，本阶段验证见 [验证记录](docs/VALIDATION.md)。
-
-## Sites 与 GitHub
-
-Sites 项目已注册；本阶段只保存版本，**不部署、不公开发布**。没有生产访问 URL。`.openai/hosting.json` 保留唯一 Site ID，后续阶段复用。
-
-用户指定代码仓库：https://github.com/lixiuxiu777/LifeHub.git 。每阶段完成验证后推送代码，禁止提交个人数据、备份、凭证与运行时数据库。GitHub 代码可见性与 Sites 访问策略是两套独立机制；静态源码中不能放真实消费等个人记录。
-
-后续建议：先完成 ChatGPT 服务端身份校验、D1 用户隔离与第一项真实待办的端到端闭环，再逐模块实现。等待用户下一阶段指令。
+[验证记录](docs/VALIDATION.md) · [设计规范](docs/DESIGN.md)

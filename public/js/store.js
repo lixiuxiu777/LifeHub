@@ -1,0 +1,36 @@
+export class DataStore extends EventTarget{
+  records=[];environment='unknown';loading=true;busy=false;error='';stateKey='';lastSynced=null;
+  async request(path,method='GET',body){
+    const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),20000);
+    try{
+      const response=await fetch(path,{method,credentials:'same-origin',cache:'no-store',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined,signal:controller.signal});
+      if(response.redirected)throw new Error('登录状态已失效，请重新登录。');
+      let data;try{data=await response.json();}catch{throw new Error('服务响应无效，请刷新或重新登录。');}
+      if(!response.ok){const error=new Error(data.message||'请求未成功');error.status=response.status;throw error;}return data;
+    }catch(error){if(error.name==='AbortError')throw new Error('请求超时，保存结果尚未确认。请刷新核对后重试。');throw error;}finally{clearTimeout(timer);}
+  }
+  list(type){return this.records.filter(r=>r.type===type);}
+  get(id){return this.records.find(r=>r.id===id);}
+  emit(){this.dispatchEvent(new Event('change'));}
+  async refresh(){
+    if(this.busy)return;this.busy=true;this.error='';this.emit();
+    try{const data=await this.request('/api/records');this.records=data.records;this.environment=data.environment;this.stateKey=data.stateKey;this.lastSynced=new Date();}
+    catch(error){this.error=error.message;throw error;}
+    finally{this.loading=false;this.busy=false;this.emit();}
+  }
+  async mutate(method,type,data,record){
+    if(this.busy)throw new Error('正在保存或刷新，请稍候。');this.busy=true;this.error='';this.emit();
+    try{
+      const payload={type,...(data?{data}:{}),...(record?{id:record.id,version:record.version}:{})};
+      const result=await this.request('/api/records',method,payload);
+      if(result.record){this.records=this.records.filter(r=>r.id!==result.record.id).concat(result.record);}else if(result.deleted){this.records=this.records.filter(r=>r.id!==result.deleted);}
+      this.stateKey=this.records.map(r=>`${r.id}:${r.version}`).sort().join('|');this.lastSynced=new Date();return result.record;
+    }catch(error){this.error=error.message;throw error;}finally{this.busy=false;this.emit();}
+  }
+  async restore(backup,expectedState){
+    if(this.busy)throw new Error('正在保存或刷新，请稍候。');this.busy=true;this.emit();
+    try{await this.request('/api/restore','POST',{backup,expectedState,confirm:'RESTORE'});}finally{this.busy=false;this.emit();}
+    await this.refresh();
+  }
+  backup(){return {format:'lifehub-backup',version:2,exportedAt:new Date().toISOString(),records:this.records};}
+}
