@@ -1,0 +1,9 @@
+{
+  "name": "lifehub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "LifeHub 个人生活仪表盘 · V1 第一阶段",
+  "scripts": { "dev": "node scripts/serve.mjs", "check": "node scripts/check.mjs" },
+  "engines": { "node": ">=22" }
+}

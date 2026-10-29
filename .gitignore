@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+node_modules/
+.wrangler/
+.sites-local/
+*.log
+*.tar.gz
+*.test.mjs
+work/
