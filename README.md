@@ -1,8 +1,13 @@
 # LifeHub
 
-生活，有序生长。个人生活仪表盘，V1 第三阶段：待办与日程管理。
+生活，有序生长。个人生活仪表盘，V1 第四阶段：收支记录与预算管理。
 
 ## 已实现
+
+- 收入/支出：金额、币种、账务日期、自定义分类、支付方式、商家、标签、备注；编辑、删除确认、全文搜索和日期/分类/收支/支付方式组合筛选。
+- 每月总预算及分类预算，按月与币种查看已支出、剩余及使用率，超支提示；收入不抵扣支出，分类预算不与总预算重复累加。
+- 真实分类支出图和最近六个月收入/支出趋势，准确数值表；历史月份切换。空数据库无示例记录。
+- 同源服务端生成筛选明细 CSV、整月预算 CSV、整月 JSON；金额精确输出、UTF-8 BOM、CSV 引号及公式注入防护。完整 JSON 备份仍在设置中。详见 [收支与预算规则](docs/FINANCE.md)。
 
 - 待办：标题、描述、四档优先级、截止日期、任务时区、待办/进行中/已完成，分类、标签、搜索与组合筛选；今日、未来七天、全部任务视图。
 - 重复任务：按天/周/月及间隔，一次生成 2–60 个独立实例。每个实例有单独 ID、状态与历史；月末缺失日期取当月末日，后续仍按原始日期计算。完成或刷新不重复生成。
@@ -34,6 +39,7 @@ npm run build
 ```sh
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_new_talkback.sql
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0001_superb_mathemanic.sql
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0002_nasty_firelord.sql
 npm run dev -- --hostname 127.0.0.1 --port 4173
 ```
 
@@ -68,6 +74,8 @@ app/                    受身份保护的页面与 records / restore API
 lib/domain.ts           十类模型、字段验证、关联与备份规则
 lib/records-service.ts  身份/所有权、CRUD、并发与原子恢复
 lib/planner-service.ts  待办/日程事务、重复生成、单步撤销与请求去重
+lib/finance-service.ts  收支/预算事务、版本和请求去重
+app/api/finance/export  按身份隔离的财务导出
 db/schema.ts            D1 / Drizzle schema
 drizzle/                已审核的 schema 迁移和元数据
 public/js/store.js      客户端统一数据访问层
@@ -77,6 +85,7 @@ public/js/views.js      首页、列表与设置
 public/js/money.js      精确金额解析与显示
 public/js/time.js       时区与格式处理
 public/js/planner-*.js  任务/日历视图、表单与纯数据规则
+public/js/finance-*.js  财务视图、表单、纯统计及导出规则
 public/styles.css      保留第一阶段设计系统并扩展表单
 worker/                 官方 Workers 入口
 ```

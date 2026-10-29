@@ -1,0 +1,348 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "36a98d51-bafb-40e7-acd3-274aa1261e19",
+  "prevId": "2603ed0c-39bd-47e5-8a2d-458b0277803b",
+  "tables": {
+    "lifehub_finance_receipts": {
+      "name": "lifehub_finance_receipts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "digest": {
+          "name": "digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "result_id": {
+          "name": "result_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "lifehub_operations": {
+      "name": "lifehub_operations",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "digest": {
+          "name": "digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "before_json": {
+          "name": "before_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "after_json": {
+          "name": "after_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "result_id": {
+          "name": "result_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ordinal": {
+          "name": "ordinal",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "undone": {
+          "name": "undone",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        }
+      },
+      "indexes": {
+        "operations_owner_ordinal": {
+          "name": "operations_owner_ordinal",
+          "columns": [
+            "owner_id",
+            "ordinal"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "lifehub_records": {
+      "name": "lifehub_records",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "data": {
+          "name": "data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "parent_id": {
+          "name": "parent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "records_owner_type": {
+          "name": "records_owner_type",
+          "columns": [
+            "owner_id",
+            "type"
+          ],
+          "isUnique": false
+        },
+        "one_dashboard_per_owner": {
+          "name": "one_dashboard_per_owner",
+          "columns": [
+            "owner_id"
+          ],
+          "isUnique": true,
+          "where": "\"lifehub_records\".\"type\" = 'DashboardPreference'"
+        },
+        "one_checkin_per_day": {
+          "name": "one_checkin_per_day",
+          "columns": [
+            "owner_id",
+            "json_extract(\"data\", '$.habitId')",
+            "json_extract(\"data\", '$.date')"
+          ],
+          "isUnique": true,
+          "where": "\"lifehub_records\".\"type\" = 'HabitCheckIn'"
+        },
+        "one_budget_per_scope": {
+          "name": "one_budget_per_scope",
+          "columns": [
+            "owner_id",
+            "json_extract(\"data\", '$.month')",
+            "json_extract(\"data\", '$.currency')",
+            "coalesce(json_extract(\"data\", '$.category'), '')"
+          ],
+          "isUnique": true,
+          "where": "\"lifehub_records\".\"type\" = 'Budget'"
+        }
+      },
+      "foreignKeys": {
+        "lifehub_records_parent_id_lifehub_records_id_fk": {
+          "name": "lifehub_records_parent_id_lifehub_records_id_fk",
+          "tableFrom": "lifehub_records",
+          "tableTo": "lifehub_records",
+          "columnsFrom": [
+            "parent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "lifehub_restore_guard": {
+      "name": "lifehub_restore_guard",
+      "columns": {
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "valid": {
+          "name": "valid",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "valid_restore_revision": {
+          "name": "valid_restore_revision",
+          "value": "\"lifehub_restore_guard\".\"valid\" = 1"
+        }
+      }
+    },
+    "lifehub_revisions": {
+      "name": "lifehub_revisions",
+      "columns": {
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {
+      "one_checkin_per_day": {
+        "columns": {
+          "json_extract(\"data\", '$.habitId')": {
+            "isExpression": true
+          },
+          "json_extract(\"data\", '$.date')": {
+            "isExpression": true
+          }
+        }
+      },
+      "one_budget_per_scope": {
+        "columns": {
+          "json_extract(\"data\", '$.month')": {
+            "isExpression": true
+          },
+          "json_extract(\"data\", '$.currency')": {
+            "isExpression": true
+          },
+          "coalesce(json_extract(\"data\", '$.category'), '')": {
+            "isExpression": true
+          }
+        }
+      }
+    }
+  }
+}

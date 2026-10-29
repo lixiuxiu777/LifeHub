@@ -5,6 +5,7 @@ import { entityTypes,parseData,parentOf,validateBackup,type Entity } from './dom
 import {ApiError} from './api-error';
 import {snapshot,stateKey} from './record-utils';
 import {plannerMutation} from './planner-service';
+import {financeMutation} from './finance-service';
 export {ApiError,snapshot,stateKey};
 
 export const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Vary':'Cookie'}});
@@ -26,6 +27,7 @@ const mutation=z.object({id:z.string().uuid().optional(),type:z.enum(entityTypes
 export async function mutate(request:Request,method:string){
   const {user,db}=await authorize(request,true);const input=mutation.parse(await readJson(request));let previous:any=null;
   if(input.type==='Task'||input.type==='CalendarEvent')return json(await plannerMutation(db,user.userId,input,method),method==='POST'?201:200);
+  if(input.type==='Expense'||input.type==='Budget')return json(await financeMutation(db,user.userId,input,method),method==='POST'?201:200);
   if(method!=='POST'){
     if(!input.id||!input.version)throw new ApiError(400,'缺少记录 ID 或版本。');
     previous=await db.prepare('SELECT * FROM lifehub_records WHERE id = ? AND owner_id = ? AND type = ?').bind(input.id,user.userId,input.type).first();

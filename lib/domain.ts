@@ -35,8 +35,8 @@ export const preferenceSchema=z.object({
 export const payloadSchemas={
   Task:taskSchema,
   CalendarEvent:eventSchema,
-  Expense:z.object({title,amountMinor,currency,date,category:z.enum(['餐饮','交通','生活','学习','其他']),note}).strict(),
-  Budget:z.object({month:z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),amountMinor,currency,note}).strict(),
+  Expense:z.object({title:z.string().trim().max(160).default(''),direction:z.enum(['expense','income']).default('expense'),amountMinor,currency,date,category:z.string().trim().min(1).max(60),paymentMethod:z.enum(['未指定','现金','银行卡','支付宝','微信','转账','其他']).default('未指定'),merchant:z.string().trim().max(160).default(''),tags:z.array(z.string().trim().min(1).max(30)).max(20).default([]).transform(v=>[...new Set(v)]),note}).strict().transform(v=>({...v,title:v.title||`${v.category}${v.direction==='income'?'收入':'支出'}`})),
+  Budget:z.object({month:z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),amountMinor,currency,scope:z.enum(['total','category']).default('total'),category:z.string().trim().min(1).max(60).nullable().default(null),note}).strict().refine(v=>v.scope==='category'?!!v.category:v.category===null,'分类预算必须指定分类；总预算不能指定分类'),
   LearningGoal:z.object({title,targetMinutes:z.number().int().min(1).max(1_000_000),status:z.enum(['active','completed']).default('active'),note}).strict(),
   StudySession:z.object({title,goalId:id.nullable().default(null),date,minutes:z.number().int().min(1).max(1440),note}).strict(),
   Habit:z.object({title,note}).strict(),

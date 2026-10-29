@@ -1,6 +1,6 @@
 # LifeHub 工作约定
 
-- 当前为 V1 第三阶段：完整待办、重复实例、子任务、日程月历、任务关联和持久化单步撤销。后续按用户阶段指令扩展。
+- 当前为 V1 第四阶段：收支记录、月度及分类预算、真实分类支出与六个月趋势、筛选和财务导出。保留前三阶段功能，后续按用户阶段指令扩展。
 - 未经用户要求，不公开发布、不扩大 Sites 访问范围。
 - 每阶段验证完成后，将代码推送到 https://github.com/lixiuxiu777/LifeHub.git 。禁止推送个人记录、备份、凭证、运行时数据库。
 - `.openai/hosting.json` 的 project_id 必须沿用；不要重复创建 Site。
@@ -13,3 +13,5 @@
 - 重复任务在服务器事务中一次生成独立实例；不要在读取、刷新或完成任务时重复生成。保留已完成历史。
 - Task / CalendarEvent 写入必须走 planner-service 事务、operationId 去重和撤销记录，不能绕过所有权、版本和 revision 检查。
 - 全天事件 endDate 不包含结束日期，界面结束日期包含当天。定时事件存 UTC，任务截止日按任务自身时区解释。
+- Expense / Budget 写入走 finance-service 的 revision 事务、operationId 去重、所有权和版本校验。收入与支出均存正整数最小单位，用 direction 区分；禁止跨币种累加或用收入冲抵预算支出。
+- 财务汇总和导出共用 finance-data。明细筛选不改变整月摘要/预算/图表；月度 JSON 不是完整恢复备份。导出用同源鉴权 POST，避免搜索和商家出现在 URL 日志中。

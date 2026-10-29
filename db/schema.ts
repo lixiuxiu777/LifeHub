@@ -9,9 +9,10 @@ export const records=sqliteTable('lifehub_records',{
   index('records_owner_type').on(t.ownerId,t.type),
   uniqueIndex('one_dashboard_per_owner').on(t.ownerId).where(sql`${t.type} = 'DashboardPreference'`),
   uniqueIndex('one_checkin_per_day').on(t.ownerId,sql`json_extract(${t.data}, '$.habitId')`,sql`json_extract(${t.data}, '$.date')`).where(sql`${t.type} = 'HabitCheckIn'`),
-  uniqueIndex('one_budget_per_month_currency').on(t.ownerId,sql`json_extract(${t.data}, '$.month')`,sql`json_extract(${t.data}, '$.currency')`).where(sql`${t.type} = 'Budget'`),
+  uniqueIndex('one_budget_per_scope').on(t.ownerId,sql`json_extract(${t.data}, '$.month')`,sql`json_extract(${t.data}, '$.currency')`,sql`coalesce(json_extract(${t.data}, '$.category'), '')`).where(sql`${t.type} = 'Budget'`),
 ]);
 export const revisions=sqliteTable('lifehub_revisions',{ownerId:text('owner_id').primaryKey(),revision:integer('revision').notNull()});
+export const financeReceipts=sqliteTable('lifehub_finance_receipts',{id:text('id').primaryKey(),ownerId:text('owner_id').notNull(),digest:text('digest').notNull(),resultId:text('result_id').notNull(),createdAt:text('created_at').notNull()});
 export const restoreGuard=sqliteTable('lifehub_restore_guard',{ownerId:text('owner_id').primaryKey(),valid:integer('valid').notNull()},t=>[check('valid_restore_revision',sql`${t.valid} = 1`)]);
 export const operations=sqliteTable('lifehub_operations',{
   id:text('id').primaryKey(),ownerId:text('owner_id').notNull(),digest:text('digest').notNull(),label:text('label').notNull(),

@@ -6,12 +6,15 @@ import { recordForm,parseForm,escape } from './forms.js';
 import { dateKey,addDays } from './selectors.js';
 import {plannerState,plannerView,shiftMonth} from './planner-view.js';
 import {updatePlannerForm} from './planner-forms.js';
+import {financeState,financeView} from './finance-view.js';
+import {shiftFinanceMonth} from './finance-data.js';
 
 const $=selector=>document.querySelector(selector);
 const store=new DataStore();let currentView='overview';let initialized=false;let dialogReturnFocus;let toastTimer;let pendingRestore=null;
 const themeMedia=matchMedia('(prefers-color-scheme: dark)');const menuMedia=matchMedia('(max-width: 800px)');
 const preference=()=>store.list('DashboardPreference')[0]?.data||defaultPreferences();
 let planner=plannerState(defaultPreferences());
+let finance=financeState(defaultPreferences());
 let legacy=null;try{const data=localStorage.getItem(STORAGE_KEY);if(data)legacy=validatePreferences(JSON.parse(data));}catch{/* Legacy data is optional; never overwrite database records automatically. */}
 function toast(message){clearTimeout(toastTimer);$('#toast').textContent=message;$('#toast').hidden=false;toastTimer=setTimeout(()=>{$('#toast').hidden=true;},5000);}
 function applyTheme(){const p=preference();const dark=p.theme==='dark'||p.theme==='system'&&themeMedia.matches;document.documentElement.dataset.theme=dark?'dark':'light';$('#theme-toggle').innerHTML=icon(dark?'sun':'moon');$('#theme-toggle').setAttribute('aria-label',dark?'切换到浅色主题':'切换到深色主题');}
@@ -30,7 +33,7 @@ function render(){
   if(store.loading)body=`<section class="no-cards" role="status"><div class="skeleton"></div><h2>正在读取你的生活空间</h2><p>数据加载完成前，不显示任何统计数字。</p></section>`;
   else if(!store.lastSynced)body=`<section class="no-cards"><h1>暂时无法读取记录</h1><p>请检查连接并重试。尚未读取到数据，不代表没有记录。</p><button class="button solid" data-action="refresh">重新连接</button></section>`;
   else if(!current)body='<section class="no-cards"><h1>页面不存在</h1><a class="button solid" href="#/home">返回首页</a></section>';
-  else body=current.id==='home'?homeView(store,preference(),currentView):current.id==='settings'?settingsView(store,preference(),legacy):current.id==='tasks'?plannerView(store,preference(),planner):moduleView(current,store,preference());
+  else body=current.id==='home'?homeView(store,preference(),currentView):current.id==='settings'?settingsView(store,preference(),legacy):current.id==='tasks'?plannerView(store,preference(),planner):current.id==='expenses'?financeView(store,preference(),finance):moduleView(current,store,preference());
   const undo=store.lastSynced&&(store.undo||current?.id==='tasks')?`<div class="undo-banner" role="status"><span>${icon('refresh')}${store.undo?'最近操作：'+escape(store.undo.label):'可撤销最近一步待办或日程操作'}</span><button class="text-link" data-action="undo" ${!store.undo||store.busy?'disabled':''}>撤销最近操作</button></div>`:'';
   $('#main').innerHTML=error+undo+body;
 }
@@ -70,6 +73,13 @@ document.addEventListener('click',event=>{
   if(a==='edit'){const record=store.get(el.dataset.id);if(record&&!store.busy)openDialog(recordForm(record.type,record,store,preference()));return;}
   if(a==='delete'){const record=store.get(el.dataset.id);if(record&&!store.busy)confirmDelete(record);return;}
   if(a==='import'){importDialog();return;}
+  if(a==='finance-add'){create('Expense',{direction:el.dataset.direction,currency:finance.currency,date:finance.month===dateKey(new Date(),preference().timeZone).slice(0,7)?dateKey(new Date(),preference().timeZone):finance.month+'-01'});return;}
+  if(a==='finance-add-budget'){create('Budget',{month:finance.month,currency:finance.currency});return;}
+  if(a==='finance-panel'){finance.panel=el.dataset.panel;render();return;}
+  if(a==='finance-prev'||a==='finance-next'||a==='finance-month'||a==='finance-today'){finance.month=a==='finance-month'?el.dataset.month:a==='finance-today'?dateKey(new Date(),preference().timeZone).slice(0,7):shiftFinanceMonth(finance.month,a==='finance-prev'?-1:1);finance.from=finance.to='';finance.page=1;render();return;}
+  if(a==='finance-reset'){finance={...financeState(preference()),month:finance.month,currency:finance.currency,panel:finance.panel};render();return;}
+  if(a==='finance-category'){finance.category=el.dataset.category;finance.panel='ledger';finance.page=1;render();return;}
+  if(a==='finance-page-prev'||a==='finance-page-next'){finance.page=Math.max(1,finance.page+(a==='finance-page-prev'?-1:1));render();return;}
   if(a==='planner-panel'){planner.panel=el.dataset.panel;render();return;}
   if(a==='task-view'){planner.view=el.dataset.view;planner.status=planner.view==='all'?'all':'active';render();return;}
   if(a==='planner-all'){planner.panel='tasks';planner.view='all';planner.status='active';planner.search='';planner.priority='all';planner.category=planner.tag='';render();return;}
@@ -83,6 +93,7 @@ document.addEventListener('click',event=>{
   act(async()=>{
     if(a==='refresh'){await store.refresh();toast('已重新读取数据库。');}
     if(a==='export')exportBackup();
+    if(a==='finance-export'){await store.exportFinance(finance,el.dataset.format);toast('已生成导出并发起下载，请检查浏览器下载列表。');}
     if(a==='undo'){await store.undoLast();toast('最近一步已撤销，事项与首页已更新。');}
     if(a==='cycle-task'){const r=store.get(el.dataset.id);await store.mutate('PATCH','Task',{...r.data,status:{todo:'in_progress',in_progress:'done',done:'todo'}[r.data.status]},r);toast('任务状态已保存，可撤销最近操作。');}
     if(a==='reset-layout'){const p=preference();await savePreferences({...p,order:cards.map(c=>c.id),hidden:[],defaultView:'overview'});currentView='overview';render();customize('[data-action="reset-layout"]');toast('默认布局已保存。');}
@@ -98,6 +109,7 @@ document.addEventListener('click',event=>{
 });
 document.addEventListener('change',event=>{
   const el=event.target;
+  if(el.dataset.financeFilter){if(el.dataset.financeFilter==='month'&&!/^\d{4}-(0[1-9]|1[0-2])$/.test(el.value)){render();return;}finance[el.dataset.financeFilter]=el.value;finance.page=1;if(['month','currency'].includes(el.dataset.financeFilter))finance.from=finance.to='';render();return;}
   if(el.closest('#record-form'))updatePlannerForm(el.closest('#record-form'),el);
   if(el.dataset.taskFilter){planner[el.dataset.taskFilter]=el.value;render();return;}
   if(el.dataset.calendarOption){planner[el.dataset.calendarOption]=el.checked;render();return;}
@@ -112,7 +124,7 @@ document.addEventListener('submit',async event=>{
   if(store.busy)return;const errorEl=$('#form-error');const submit=form.querySelector('[type="submit"]');submit.disabled=true;submit.textContent='正在保存…';errorEl.hidden=true;
   try{const data=parseForm(form);await store.mutate(form.dataset.id?'PATCH':'POST',form.dataset.type,data,form.dataset.id?{id:form.dataset.id,version:Number(form.dataset.version)}:null,form.dataset.operationId);closeDialog();toast(data.recurrence&&!form.dataset.id?`已保存 ${data.recurrence.count} 个独立任务实例。`:'记录已保存，首页摘要已更新。');}
   catch(error){errorEl.textContent=error.message;errorEl.hidden=false;}
-  finally{if(submit.isConnected){submit.disabled=false;submit.textContent='保存'+typeLabels[form.dataset.type];}}
+  finally{if(submit.isConnected){submit.disabled=false;submit.textContent='保存'+(form.dataset.type==='Expense'?'收支记录':form.dataset.type==='Budget'?'预算':typeLabels[form.dataset.type]);}}
 });
 $('#app-dialog').addEventListener('cancel',event=>{event.preventDefault();closeDialog();});
 $('#app-dialog').addEventListener('click',event=>{if(event.target===$('#app-dialog'))closeDialog();});
@@ -125,6 +137,6 @@ window.addEventListener('hashchange',()=>{if($('#app-dialog').open&&!store.busy)
 store.addEventListener('change',render);
 window.addEventListener('focus',()=>{if(initialized&&!store.busy&&!$('#app-dialog').open)store.refresh().catch(()=>{});});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&initialized&&!store.busy&&!$('#app-dialog').open)store.refresh().catch(()=>{});});
-document.addEventListener('input',event=>{if(event.target.id!=='task-search')return;const start=event.target.selectionStart,end=event.target.selectionEnd;planner.search=event.target.value;render();const field=$('#task-search');field.focus();field.setSelectionRange(start,end);});
+document.addEventListener('input',event=>{if(!['task-search','finance-search'].includes(event.target.id))return;const id=event.target.id,start=event.target.selectionStart,end=event.target.selectionEnd;(id==='task-search'?planner:finance).search=event.target.value;if(id==='finance-search')finance.page=1;render();const field=$('#'+id);field.focus();field.setSelectionRange(start,end);});
 render();closeMenu();
 try{await store.refresh();if(!store.list('DashboardPreference').length){try{await savePreferences(defaultPreferences());}catch(error){if(error.status===409)await store.refresh();else throw error;}}currentView=preference().defaultView;planner=plannerState(preference());initialized=true;render();}catch(error){toast(error.message);}

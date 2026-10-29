@@ -22,7 +22,7 @@ export class DataStore extends EventTarget{
     if(this.busy)throw new Error('正在保存或刷新，请稍候。');this.busy=true;this.error='';this.emit();
     try{
       const payload={type,...(data?{data}:{}),...(record?{id:record.id,version:record.version}:{})};
-      if(type==='Task'||type==='CalendarEvent')payload.operationId=operationId||crypto.randomUUID();
+      if(['Task','CalendarEvent','Expense','Budget'].includes(type))payload.operationId=operationId||crypto.randomUUID();
       const result=await this.request('/api/records',method,payload);
       if(result.snapshot)this.records=result.snapshot;
       else if(result.record){this.records=this.records.filter(r=>r.id!==result.record.id).concat(result.record);}else if(result.deleted){this.records=this.records.filter(r=>r.id!==result.deleted);}
@@ -41,4 +41,15 @@ export class DataStore extends EventTarget{
     await this.refresh();
   }
   backup(){return {format:'lifehub-backup',version:2,exportedAt:new Date().toISOString(),records:this.records};}
+  async exportFinance(state,format){
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);
+    try{
+      const {month,currency,from,to,category,direction,paymentMethod,search}=state;
+      const response=await fetch('/api/finance/export',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({month,currency,format,...(format==='ledger-csv'?{from,to,category,direction,paymentMethod,search}:{})}),signal:controller.signal});
+      if(response.redirected)throw new Error('登录状态已失效，请重新登录。');
+      if(!response.ok){const data=await response.json();throw new Error(data.message||'导出失败');}
+      if(!response.headers.get('content-disposition')?.startsWith('attachment;'))throw new Error('服务返回无效，请重新登录后重试');
+      const blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`lifehub-${format}-${month}-${currency}.${format==='month-json'?'json':'csv'}`;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);
+    }catch(error){if(error.name==='AbortError')throw new Error('导出超时，请稍后重试');throw error;}finally{clearTimeout(timer);}
+  }
 }
