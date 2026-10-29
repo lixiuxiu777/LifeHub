@@ -2,8 +2,11 @@ import { env } from 'cloudflare:workers';
 import { z } from 'zod';
 import { getChatGPTUser } from '../app/chatgpt-auth';
 import { entityTypes,parseData,parentOf,validateBackup,type Entity } from './domain';
+import {ApiError} from './api-error';
+import {snapshot,stateKey} from './record-utils';
+import {plannerMutation} from './planner-service';
+export {ApiError,snapshot,stateKey};
 
-export class ApiError extends Error{constructor(public status:number,message:string){super(message);}}
 export const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Vary':'Cookie'}});
 export async function authorize(request:Request,write=false){
   const user=await getChatGPTUser();if(!user)throw new ApiError(401,'请先登录 ChatGPT，再访问个人记录。');
@@ -19,11 +22,10 @@ export async function readJson(request:Request){
   const text=await request.text();if(text.length>2_000_000)throw new ApiError(413,'数据超过 2 MB 限制。');
   try{return JSON.parse(text);}catch{throw new ApiError(400,'JSON 格式无效。');}
 }
-function toEntity(row:any):Entity{return {id:row.id,type:row.type,data:JSON.parse(row.data),createdAt:row.created_at,updatedAt:row.updated_at,version:row.version};}
-export async function snapshot(db:D1Database,owner:string){const rows=await db.prepare('SELECT * FROM lifehub_records WHERE owner_id = ? ORDER BY created_at DESC,id').bind(owner).all();return rows.results.map(toEntity);}
-const mutation=z.object({id:z.string().uuid().optional(),type:z.enum(entityTypes),version:z.number().int().positive().safe().optional(),data:z.unknown().optional()}).strict();
+const mutation=z.object({id:z.string().uuid().optional(),type:z.enum(entityTypes),version:z.number().int().positive().safe().optional(),data:z.unknown().optional(),operationId:z.string().uuid().optional()}).strict();
 export async function mutate(request:Request,method:string){
   const {user,db}=await authorize(request,true);const input=mutation.parse(await readJson(request));let previous:any=null;
+  if(input.type==='Task'||input.type==='CalendarEvent')return json(await plannerMutation(db,user.userId,input,method),method==='POST'?201:200);
   if(method!=='POST'){
     if(!input.id||!input.version)throw new ApiError(400,'缺少记录 ID 或版本。');
     previous=await db.prepare('SELECT * FROM lifehub_records WHERE id = ? AND owner_id = ? AND type = ?').bind(input.id,user.userId,input.type).first();
@@ -42,7 +44,6 @@ export async function mutate(request:Request,method:string){
   else{const result=await db.prepare('UPDATE lifehub_records SET data=?,parent_id=?,updated_at=?,version=? WHERE id=? AND owner_id=? AND version=?').bind(JSON.stringify(data),parent?.id??null,now,record.version,record.id,user.userId,input.version).run();if(result.meta.changes===0)throw new ApiError(409,'记录已变化，请刷新后重试。');}
   return json({record},method==='POST'?201:200);
 }
-export function stateKey(records:Entity[]){return records.map(r=>`${r.id}:${r.version}`).sort().join('|');}
 export async function restore(request:Request){
   const {user,db}=await authorize(request,true);let records:Entity[];
   const input=z.object({backup:z.unknown(),expectedState:z.string(),confirm:z.literal('RESTORE')}).strict().parse(await readJson(request));
@@ -53,9 +54,10 @@ export async function restore(request:Request){
   const stamp=Date.now();await db.batch([
     db.prepare('INSERT OR IGNORE INTO lifehub_revisions (owner_id,revision) VALUES (?,0)').bind(user.userId),
     db.prepare('INSERT INTO lifehub_restore_guard (owner_id,valid) SELECT ?,CASE WHEN revision=? THEN 1 ELSE 0 END FROM lifehub_revisions WHERE owner_id=?').bind(user.userId,revision?.revision??0,user.userId),
-    db.prepare('DELETE FROM lifehub_records WHERE owner_id=? AND parent_id IS NOT NULL').bind(user.userId),
+    db.prepare('UPDATE lifehub_records SET parent_id=NULL WHERE owner_id=? AND parent_id IS NOT NULL').bind(user.userId),
     db.prepare('DELETE FROM lifehub_records WHERE owner_id=?').bind(user.userId),
     ...records.map((r,i)=>db.prepare('INSERT INTO lifehub_records (id,owner_id,type,data,parent_id,created_at,updated_at,version) VALUES (?,?,?,?,?,?,?,?)').bind(r.id,user.userId,r.type,JSON.stringify(r.data),parentOf(r.type,r.data)?.id??null,r.createdAt,new Date(Math.max(stamp,Date.parse(r.createdAt))).toISOString(),stamp+i)),
+    db.prepare('UPDATE lifehub_operations SET before_json=NULL,after_json=NULL WHERE owner_id=?').bind(user.userId),
     db.prepare('DELETE FROM lifehub_restore_guard WHERE owner_id=?').bind(user.userId),
   ]);return json({restored:records.length});
 }
@@ -63,7 +65,7 @@ export async function safely(action:()=>Promise<Response>){
   try{return await action();}catch(error){
     if(error instanceof ApiError)return json({message:error.message},error.status);
     if(error instanceof z.ZodError)return json({message:error.issues.map(v=>v.message).slice(0,3).join('；')},400);
-    if(/UNIQUE|FOREIGN KEY|CHECK constraint/i.test(error instanceof Error?error.message:''))return json({message:'记录冲突：请检查重复打卡、重复预算，或关联记录；刷新后重试。'},409);
+    if(/UNIQUE|FOREIGN KEY|CHECK constraint/i.test(error instanceof Error?error.message:''))return json({message:'数据已变化或存在关联冲突。此次操作未生效，请刷新核对后重试。'},409);
     return json({message:'服务暂时不可用，尚未确认保存，请刷新核对后重试。'},503);
   }
 }

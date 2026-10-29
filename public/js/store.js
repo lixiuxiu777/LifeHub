@@ -1,5 +1,5 @@
 export class DataStore extends EventTarget{
-  records=[];environment='unknown';loading=true;busy=false;error='';stateKey='';lastSynced=null;
+  records=[];environment='unknown';loading=true;busy=false;error='';stateKey='';lastSynced=null;undo=null;
   async request(path,method='GET',body){
     const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),20000);
     try{
@@ -14,18 +14,26 @@ export class DataStore extends EventTarget{
   emit(){this.dispatchEvent(new Event('change'));}
   async refresh(){
     if(this.busy)return;this.busy=true;this.error='';this.emit();
-    try{const data=await this.request('/api/records');this.records=data.records;this.environment=data.environment;this.stateKey=data.stateKey;this.lastSynced=new Date();}
+    try{const data=await this.request('/api/records');this.records=data.records;this.environment=data.environment;this.stateKey=data.stateKey;this.undo=data.undo||null;this.lastSynced=new Date();}
     catch(error){this.error=error.message;throw error;}
     finally{this.loading=false;this.busy=false;this.emit();}
   }
-  async mutate(method,type,data,record){
+  async mutate(method,type,data,record,operationId){
     if(this.busy)throw new Error('正在保存或刷新，请稍候。');this.busy=true;this.error='';this.emit();
     try{
       const payload={type,...(data?{data}:{}),...(record?{id:record.id,version:record.version}:{})};
+      if(type==='Task'||type==='CalendarEvent')payload.operationId=operationId||crypto.randomUUID();
       const result=await this.request('/api/records',method,payload);
-      if(result.record){this.records=this.records.filter(r=>r.id!==result.record.id).concat(result.record);}else if(result.deleted){this.records=this.records.filter(r=>r.id!==result.deleted);}
+      if(result.snapshot)this.records=result.snapshot;
+      else if(result.record){this.records=this.records.filter(r=>r.id!==result.record.id).concat(result.record);}else if(result.deleted){this.records=this.records.filter(r=>r.id!==result.deleted);}
+      if('undo'in result)this.undo=result.undo;
       this.stateKey=this.records.map(r=>`${r.id}:${r.version}`).sort().join('|');this.lastSynced=new Date();return result.record;
     }catch(error){this.error=error.message;throw error;}finally{this.busy=false;this.emit();}
+  }
+  async undoLast(){
+    if(this.busy||!this.undo)throw new Error('当前没有可撤销的操作');const id=this.undo.id;this.busy=true;this.error='';this.emit();
+    try{const result=await this.request('/api/undo','POST',{operationId:id});this.records=result.snapshot;this.undo=result.undo;this.stateKey=this.records.map(r=>`${r.id}:${r.version}`).sort().join('|');this.lastSynced=new Date();}
+    catch(error){this.error=error.message;throw error;}finally{this.busy=false;this.emit();}
   }
   async restore(backup,expectedState){
     if(this.busy)throw new Error('正在保存或刷新，请稍候。');this.busy=true;this.emit();

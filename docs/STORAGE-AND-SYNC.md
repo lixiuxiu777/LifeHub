@@ -1,4 +1,4 @@
-# 第二阶段：存储、身份与一致性
+# 存储、身份与一致性（更新至第三阶段）
 
 核对日期：2026-10-29。依据当前 Sites 1.1.2 技能、官方 Vinext starter、原生工具与实际本机 D1 测试。
 
@@ -25,8 +25,8 @@
 
 | 模型 | 业务字段 |
 |---|---|
-| Task | title, dueDate, priority, status, note |
-| CalendarEvent | title, startAt, endAt, timeZone, note |
+| Task | title, description, dueDate, timeZone, priority, status, category, tags, parentTaskId, recurrence, seriesId, occurrenceDate, occurrenceIndex |
+| CalendarEvent | title, allDay, startAt/endAt 或 startDate/endDate, timeZone, taskId, note |
 | Expense | title, amountMinor, currency, date, category, note |
 | Budget | month, amountMinor, currency, note |
 | LearningGoal | title, targetMinutes, status, note |
@@ -39,6 +39,8 @@
 学习记录可关联自己的学习目标，打卡必须关联自己的习惯。外键限制删除仍有子记录的目标/习惯；每用户仅一份 DashboardPreference，同习惯同日只能打卡一次，同币种同月只有一份预算。模型严格验证，未知字段、浮点最小货币单位、无效日期、危险链接均拒绝。
 
 当前采用带类型 JSON 记录表，统一 metadata / owner 索引，适合此阶段的统一管理。后续数据量增长时可按领域增加专门查询、日期索引、分页和聚合 API；不改变现有记录身份与所有权。
+
+第三阶段额外使用私有 `lifehub_operations` 保存最近一步待办/日程撤销快照与请求去重凭据。关联、重复实例、全天结束边界和持久化单步撤销的完整规则见 [待办与日程规则](TASKS-AND-CALENDAR.md)。
 
 ## 金额与时间
 

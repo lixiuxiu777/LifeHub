@@ -5,13 +5,15 @@ import { escape,zones } from './forms.js';
 import { money } from './money.js';
 import { dashboard,dateKey } from './selectors.js';
 import { formattedDate,formattedTime } from './time.js';
+import {taskStatuses,priorities} from './planner-data.js';
+import {eventDescription} from './planner-view.js';
 
 export const createButton=(type,label=typeLabels[type])=>`<button class="button outline" data-action="create" data-type="${type}">${icon('plus')}${label}</button>`;
 export function titleFor(r,store){if(r.type==='Budget')return `${r.data.month} ${r.data.currency} 月度预算`;if(r.type==='HabitCheckIn')return store.get(r.data.habitId)?.data.title||'习惯打卡';return r.data.title;}
 export function detailFor(r,store,p){
   const d=r.data;
-  if(r.type==='Task')return `${formattedDate(d.dueDate,p)} · ${d.priority==='high'?'重要 · ':''}${d.status==='done'?'已完成':'待完成'}`;
-  if(r.type==='CalendarEvent')return `${formattedDate(dateKey(d.startAt,p.timeZone),p)} ${formattedTime(d.startAt,p)} — ${formattedDate(dateKey(d.endAt,p.timeZone),p)} ${formattedTime(d.endAt,p)} · ${p.timeZone}`;
+  if(r.type==='Task')return `${formattedDate(d.dueDate,p)} · ${priorities[d.priority]} · ${taskStatuses[d.status]} · ${d.timeZone}`;
+  if(r.type==='CalendarEvent')return eventDescription(r,p);
   if(r.type==='Expense')return `${money(d.amountMinor,d.currency)} ${d.currency} · ${d.category} · ${formattedDate(d.date,p)}`;
   if(r.type==='Budget')return `${money(d.amountMinor,d.currency)} ${d.currency}`;
   if(r.type==='LearningGoal')return `${d.targetMinutes} 分钟目标 · ${d.status==='active'?'进行中':'已完成'}`;
@@ -28,7 +30,7 @@ export function quickGrid(){return `<div class="quick-grid">${['Task','CalendarE
 function cardBody(card,summary,store,p){
   const s=summary;
   if(card.id==='quick')return `<p class="quick-note">记录生活的小事，留下认真生活的痕迹。</p>${quickGrid()}`;
-  if(card.id==='tasks')return s.tasks.length?recordRows(s.tasks.slice(0,4),store,p,{small:true})+`<div class="demo-footer">今日 ${s.tasks.length} 项 · ${s.pendingTasks} 项待完成</div>`:empty(card);
+  if(card.id==='tasks')return s.tasks.length?recordRows(s.tasks.slice(0,4),store,p,{small:true})+`<div class="demo-footer">今日 ${s.pendingTasks} 项未完成 · 按任务时区判断</div>`:empty(card);
   if(card.id==='schedule')return s.schedule.length?recordRows(s.schedule.slice(0,4),store,p,{small:true}):empty(card);
   if(card.id==='expenses'){
     if(!s.expenses.length&&!s.budgets.length)return empty(card);

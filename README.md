@@ -1,8 +1,14 @@
 # LifeHub
 
-生活，有序生长。个人生活仪表盘，V1 第二阶段：统一数据与可配置首页。
+生活，有序生长。个人生活仪表盘，V1 第三阶段：待办与日程管理。
 
 ## 已实现
+
+- 待办：标题、描述、四档优先级、截止日期、任务时区、待办/进行中/已完成，分类、标签、搜索与组合筛选；今日、未来七天、全部任务视图。
+- 重复任务：按天/周/月及间隔，一次生成 2–60 个独立实例。每个实例有单独 ID、状态与历史；月末缺失日期取当月末日，后续仍按原始日期计算。完成或刷新不重复生成。
+- 子任务：最多五层，禁止循环；父子状态独立。删除父任务保留子任务并提升为顶层，关联日程保留并解除链接。
+- 日程：指定时间/全天、多日事件、月历与当天明细、关联任务、即将到期和逾期提示。
+- 删除确认与持久化单步撤销；刷新后可撤销最近一次待办/日程新增、编辑、状态修改、删除或整批重复生成。并发变化时拒绝不安全撤销。
 
 - 十类统一模型：Task、CalendarEvent、Expense、Budget、LearningGoal、StudySession、Habit、HabitCheckIn、Bookmark、DashboardPreference。
 - 每条记录有服务端 UUID、创建/更新时间与并发版本号；用户所有权由 ChatGPT 服务端身份决定。
@@ -27,6 +33,7 @@ npm run build
 
 ```sh
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_new_talkback.sql
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0001_superb_mathemanic.sql
 npm run dev -- --hostname 127.0.0.1 --port 4173
 ```
 
@@ -60,6 +67,7 @@ npm run check
 app/                    受身份保护的页面与 records / restore API
 lib/domain.ts           十类模型、字段验证、关联与备份规则
 lib/records-service.ts  身份/所有权、CRUD、并发与原子恢复
+lib/planner-service.ts  待办/日程事务、重复生成、单步撤销与请求去重
 db/schema.ts            D1 / Drizzle schema
 drizzle/                已审核的 schema 迁移和元数据
 public/js/store.js      客户端统一数据访问层
@@ -68,6 +76,7 @@ public/js/forms.js      统一新增/编辑表单
 public/js/views.js      首页、列表与设置
 public/js/money.js      精确金额解析与显示
 public/js/time.js       时区与格式处理
+public/js/planner-*.js  任务/日历视图、表单与纯数据规则
 public/styles.css      保留第一阶段设计系统并扩展表单
 worker/                 官方 Workers 入口
 ```

@@ -2,11 +2,13 @@ import { typeLabels } from './model.js';
 import { CURRENCIES,parseAmount,amountInput } from './money.js';
 import { localInput,localToISO } from './time.js';
 import { dateKey } from './selectors.js';
-export const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-export const zones=['Asia/Shanghai','UTC','America/New_York','Europe/London'];
+import {escape,zones} from './html-utils.js';
+import {taskForm,eventForm,parsePlannerForm} from './planner-forms.js';
+export {escape,zones};
 const names={title:'标题',note:'备注',dueDate:'截止日期',priority:'优先级',status:'状态',startAt:'开始时间',endAt:'结束时间',timeZone:'日程时区',amount:'金额',currency:'货币',date:'记录日期',category:'分类',month:'预算月份',targetMinutes:'目标学习分钟数',goalId:'关联学习目标',minutes:'学习分钟数',habitId:'打卡习惯',url:'链接地址',tags:'标签'};
 const fields={Task:['title','dueDate','priority','status','note'],CalendarEvent:['title','timeZone','startAt','endAt','note'],Expense:['title','currency','amount','date','category','note'],Budget:['currency','amount','month','note'],LearningGoal:['title','targetMinutes','status','note'],StudySession:['title','date','minutes','goalId','note'],Habit:['title','note'],HabitCheckIn:['habitId','date','note'],Bookmark:['title','url','tags','note']};
 export function recordForm(type,record,store,p){
+  if(type==='Task')return taskForm(record,store,p);if(type==='CalendarEvent')return eventForm(record,store,p);
   const d={...(record?.data||{})};const today=dateKey(new Date(),p.timeZone);d.currency??='CNY';d.timeZone??=p.timeZone;d.date??=today;d.dueDate??=today;d.month??=today.slice(0,7);d.priority??='normal';d.status??=type==='LearningGoal'?'active':'todo';
   const now=new Date();now.setSeconds(0,0);d.startAt=localInput(d.startAt||now,d.timeZone);d.endAt=localInput(d.endAt||new Date(now.valueOf()+3600000),d.timeZone);
   if(record?.data.amountMinor)d.amount=amountInput(record.data.amountMinor,d.currency);
@@ -24,6 +26,7 @@ export function recordForm(type,record,store,p){
   return `<h2 id="dialog-title">${record?'编辑':'新增'}${typeLabels[type]}</h2><p class="dialog-description">${type==='CalendarEvent'?'按所选日程时区输入时间。夏令时不存在或重复的时间会提示修正。':type==='Expense'||type==='Budget'?'金额按所选货币精度保存为整数，不同货币独立统计。':type==='HabitCheckIn'?'同一习惯每天仅保留一次打卡。':'保存成功后，首页与相关模块会同步更新。'}</p>${type==='HabitCheckIn'&&!store.list('Habit').length?'<div class="preview-notice">请先建立一个习惯。<button class="text-link" data-action="create" data-type="Habit">新建习惯</button></div>':''}<form id="record-form" data-type="${type}" ${record?`data-id="${record.id}" data-version="${record.version}"`:''}><div class="form-grid">${controls}</div><p class="form-error" role="alert" id="form-error" hidden></p><div class="dialog-footer"><button type="button" class="button outline" data-action="close-dialog">取消</button><button type="submit" class="button solid">保存${typeLabels[type]}</button></div></form>`;
 }
 export function parseForm(form){
+  if(form.dataset.type==='Task'||form.dataset.type==='CalendarEvent')return parsePlannerForm(form);
   const raw=Object.fromEntries(new FormData(form));const type=form.dataset.type;const d={};for(const key of fields[type])d[key]=String(raw[key]??'').trim();
   if('amount'in d){d.amountMinor=parseAmount(d.amount,d.currency);delete d.amount;}
   if(type==='CalendarEvent'){d.startAt=localToISO(d.startAt,d.timeZone);d.endAt=localToISO(d.endAt,d.timeZone);if(d.endAt<=d.startAt)throw new Error('结束时间必须晚于开始时间');}

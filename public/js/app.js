@@ -3,12 +3,15 @@ import { modules,cards,defaultPreferences,validatePreferences,STORAGE_KEY,typeLa
 import { DataStore } from './store.js';
 import { homeView,moduleView,settingsView,quickGrid,titleFor } from './views.js';
 import { recordForm,parseForm,escape } from './forms.js';
-import { dateKey } from './selectors.js';
+import { dateKey,addDays } from './selectors.js';
+import {plannerState,plannerView,shiftMonth} from './planner-view.js';
+import {updatePlannerForm} from './planner-forms.js';
 
 const $=selector=>document.querySelector(selector);
 const store=new DataStore();let currentView='overview';let initialized=false;let dialogReturnFocus;let toastTimer;let pendingRestore=null;
 const themeMedia=matchMedia('(prefers-color-scheme: dark)');const menuMedia=matchMedia('(max-width: 800px)');
 const preference=()=>store.list('DashboardPreference')[0]?.data||defaultPreferences();
+let planner=plannerState(defaultPreferences());
 let legacy=null;try{const data=localStorage.getItem(STORAGE_KEY);if(data)legacy=validatePreferences(JSON.parse(data));}catch{/* Legacy data is optional; never overwrite database records automatically. */}
 function toast(message){clearTimeout(toastTimer);$('#toast').textContent=message;$('#toast').hidden=false;toastTimer=setTimeout(()=>{$('#toast').hidden=true;},5000);}
 function applyTheme(){const p=preference();const dark=p.theme==='dark'||p.theme==='system'&&themeMedia.matches;document.documentElement.dataset.theme=dark?'dark':'light';$('#theme-toggle').innerHTML=icon(dark?'sun':'moon');$('#theme-toggle').setAttribute('aria-label',dark?'切换到浅色主题':'切换到深色主题');}
@@ -27,8 +30,9 @@ function render(){
   if(store.loading)body=`<section class="no-cards" role="status"><div class="skeleton"></div><h2>正在读取你的生活空间</h2><p>数据加载完成前，不显示任何统计数字。</p></section>`;
   else if(!store.lastSynced)body=`<section class="no-cards"><h1>暂时无法读取记录</h1><p>请检查连接并重试。尚未读取到数据，不代表没有记录。</p><button class="button solid" data-action="refresh">重新连接</button></section>`;
   else if(!current)body='<section class="no-cards"><h1>页面不存在</h1><a class="button solid" href="#/home">返回首页</a></section>';
-  else body=current.id==='home'?homeView(store,preference(),currentView):current.id==='settings'?settingsView(store,preference(),legacy):moduleView(current,store,preference());
-  $('#main').innerHTML=error+body;
+  else body=current.id==='home'?homeView(store,preference(),currentView):current.id==='settings'?settingsView(store,preference(),legacy):current.id==='tasks'?plannerView(store,preference(),planner):moduleView(current,store,preference());
+  const undo=store.lastSynced&&(store.undo||current?.id==='tasks')?`<div class="undo-banner" role="status"><span>${icon('refresh')}${store.undo?'最近操作：'+escape(store.undo.label):'可撤销最近一步待办或日程操作'}</span><button class="text-link" data-action="undo" ${!store.undo||store.busy?'disabled':''}>撤销最近操作</button></div>`:'';
+  $('#main').innerHTML=error+undo+body;
 }
 function openDialog(content){if(!$('#app-dialog').open)dialogReturnFocus=document.activeElement;$('#app-dialog').innerHTML=`<div class="dialog-top"><span class="eyebrow">LIFEHUB</span><button class="icon-button" data-action="close-dialog" aria-label="关闭弹窗">${icon('close')}</button></div>${content}`;if(!$('#app-dialog').open)$('#app-dialog').showModal();}
 function closeDialog(){if(store.busy){toast('正在处理，请稍候。');return;}$('#app-dialog').close();pendingRestore=null;if(dialogReturnFocus?.isConnected)dialogReturnFocus.focus();}
@@ -37,9 +41,14 @@ function customize(focus){
   const p=preference();openDialog(`<h2 id="dialog-title">你的首页，你来安排</h2><p class="dialog-description">勾选卡片并用箭头调整顺序。每次修改都会保存到当前数据空间，失败时保留原配置。</p><div class="customize-list">${p.order.map((id,index)=>{const card=cards.find(c=>c.id===id);return `<div class="customize-row"><label>${icon(card.icon)}<span>${card.title}</span><input type="checkbox" data-card-toggle="${id}" ${p.hidden.includes(id)?'':'checked'} aria-label="显示${card.title}"></label><div><button class="icon-button" data-action="move-up" data-id="${id}" aria-label="上移${card.title}" ${index===0?'disabled':''}>${icon('up')}</button><button class="icon-button" data-action="move-down" data-id="${id}" aria-label="下移${card.title}" ${index===p.order.length-1?'disabled':''}>${icon('down')}</button></div></div>`;}).join('')}</div><div class="dialog-footer"><button class="text-link" data-action="reset-layout">恢复默认布局</button><button class="button solid" data-action="close-dialog">完成</button></div>`);
   if(focus)$('#app-dialog').querySelector(focus)?.focus();
 }
-function create(type){openDialog(recordForm(type,null,store,preference()));}
+function create(type,seed){openDialog(recordForm(type,seed?{data:seed}:null,store,preference()));}
 function quickAdd(){openDialog(`<h2 id="dialog-title">记录一件小事</h2><p class="dialog-description">选择想记录的内容，保存后会更新首页摘要。</p>${quickGrid()}`);}
-function confirmDelete(record){openDialog(`<h2 id="dialog-title">删除这条${typeLabels[record.type]}？</h2><p class="dialog-description">${escape(titleFor(record,store))}<br>删除后首页摘要会随之更新。此操作不可在页面内撤销；如需保留，请先导出备份。</p><div class="dialog-footer"><button class="button outline" data-action="close-dialog">取消</button><button class="button danger" id="confirm-delete">确认删除</button></div>`);$('#confirm-delete').addEventListener('click',()=>act(async()=>{await store.mutate('DELETE',record.type,null,record);closeDialog();toast('记录已删除。');}),{once:true});}
+function confirmDelete(record){
+  const plannerRecord=['Task','CalendarEvent'].includes(record.type),operationId=crypto.randomUUID();
+  const message=record.type==='Task'?`${record.data.seriesId?'仅删除当前重复实例，其他实例与历史保留。':''}子任务会保留并提升为顶层任务，关联日程保留并解除链接。可撤销最近一步。`:record.type==='CalendarEvent'?'只删除此日程，关联任务保留。可撤销最近一步。':'删除后首页摘要会更新。此类记录请通过备份恢复。';
+  openDialog(`<h2 id="dialog-title">删除这条${typeLabels[record.type]}？</h2><p class="dialog-description">${escape(titleFor(record,store))}<br>${message}</p><div class="dialog-footer"><button class="button outline" data-action="close-dialog">取消</button><button class="button danger" id="confirm-delete">确认删除</button></div>`);
+  $('#confirm-delete').addEventListener('click',()=>act(async()=>{await store.mutate('DELETE',record.type,null,record,operationId);closeDialog();toast(plannerRecord?'记录已删除，可撤销最近操作。':'记录已删除。');}));
+}
 function exportBackup(){
   if(!store.lastSynced||store.error)throw new Error('请先成功刷新数据，再导出完整备份。');
   const blob=new Blob([JSON.stringify(store.backup(),null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`lifehub-backup-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);toast('已发起完整备份下载，请妥善保存文件。');
@@ -55,15 +64,27 @@ async function act(action){if(store.busy){toast('正在保存或刷新，请稍�
 document.addEventListener('click',event=>{
   const el=event.target.closest('[data-action]');if(!el||el.disabled)return;const a=el.dataset.action;
   if(a==='close-dialog'){closeDialog();return;}
-  if(a==='create'){if(store.lastSynced&&!store.busy)create(el.dataset.type);return;}
+  if(a==='create'){if(store.lastSynced&&!store.busy)create(el.dataset.type,el.dataset.type==='CalendarEvent'&&route()==='tasks'&&planner.panel==='calendar'?{allDay:true,startDate:planner.selectedDay,endDate:addDays(planner.selectedDay,1)}:null);return;}
   if(a==='quick-add'){if(store.lastSynced&&!store.busy)quickAdd();return;}
   if(a==='customize'){if(store.lastSynced&&!store.busy)customize();return;}
   if(a==='edit'){const record=store.get(el.dataset.id);if(record&&!store.busy)openDialog(recordForm(record.type,record,store,preference()));return;}
   if(a==='delete'){const record=store.get(el.dataset.id);if(record&&!store.busy)confirmDelete(record);return;}
   if(a==='import'){importDialog();return;}
+  if(a==='planner-panel'){planner.panel=el.dataset.panel;render();return;}
+  if(a==='task-view'){planner.view=el.dataset.view;planner.status=planner.view==='all'?'all':'active';render();return;}
+  if(a==='planner-all'){planner.panel='tasks';planner.view='all';planner.status='active';planner.search='';planner.priority='all';planner.category=planner.tag='';render();return;}
+  if(a==='reset-task-filters'){const base=plannerState(preference());planner={...planner,status:planner.view==='all'?'all':'active',priority:base.priority,category:base.category,tag:base.tag,search:''};render();return;}
+  if(a==='calendar-prev'||a==='calendar-next'){planner.month=shiftMonth(planner.month,a==='calendar-prev'?-1:1);planner.selectedDay=planner.month+'-01';render();return;}
+  if(a==='calendar-today'){planner.selectedDay=dateKey(new Date(),preference().timeZone);planner.month=planner.selectedDay.slice(0,7);render();return;}
+  if(a==='calendar-select'){planner.selectedDay=el.dataset.date;planner.month=planner.selectedDay.slice(0,7);render();return;}
+  if(a==='calendar-add'){create('CalendarEvent',{allDay:true,startDate:planner.selectedDay,endDate:addDays(planner.selectedDay,1)});return;}
+  if(a==='add-subtask'){const parent=store.get(el.dataset.id);create('Task',{parentTaskId:parent.id,dueDate:parent.data.dueDate,timeZone:parent.data.timeZone,category:parent.data.category});return;}
+  if(a==='link-event'){const task=store.get(el.dataset.id);create('CalendarEvent',{title:task.data.title,taskId:task.id,timeZone:task.data.timeZone});return;}
   act(async()=>{
     if(a==='refresh'){await store.refresh();toast('已重新读取数据库。');}
     if(a==='export')exportBackup();
+    if(a==='undo'){await store.undoLast();toast('最近一步已撤销，事项与首页已更新。');}
+    if(a==='cycle-task'){const r=store.get(el.dataset.id);await store.mutate('PATCH','Task',{...r.data,status:{todo:'in_progress',in_progress:'done',done:'todo'}[r.data.status]},r);toast('任务状态已保存，可撤销最近操作。');}
     if(a==='reset-layout'){const p=preference();await savePreferences({...p,order:cards.map(c=>c.id),hidden:[],defaultView:'overview'});currentView='overview';render();customize('[data-action="reset-layout"]');toast('默认布局已保存。');}
     if(a==='move-up'||a==='move-down'){
       const p=preference();const order=[...p.order];const index=order.indexOf(el.dataset.id),target=index+(a==='move-up'?-1:1);if(target<0||target>=order.length)return;[order[index],order[target]]=[order[target],order[index]];
@@ -77,6 +98,9 @@ document.addEventListener('click',event=>{
 });
 document.addEventListener('change',event=>{
   const el=event.target;
+  if(el.closest('#record-form'))updatePlannerForm(el.closest('#record-form'),el);
+  if(el.dataset.taskFilter){planner[el.dataset.taskFilter]=el.value;render();return;}
+  if(el.dataset.calendarOption){planner[el.dataset.calendarOption]=el.checked;render();return;}
   if(el.id==='current-view'){currentView=el.value;render();return;}
   if(el.id==='backup-file'&&el.files[0]){const file=el.files[0];if(file.size>2_000_000){toast('文件超过 2 MB 限制。');el.value='';return;}file.text().then(text=>{$('#backup-text').value=text;}).catch(()=>toast('无法读取文件，请改用粘贴 JSON。'));return;}
   if(el.dataset.preference){if(store.busy){render();return;}act(async()=>{const value=el.value;await savePreferences({...preference(),[el.dataset.preference]:value});if(el.dataset.preference==='defaultView'){currentView=value;render();}toast('偏好已保存。');});}
@@ -86,7 +110,7 @@ document.addEventListener('submit',async event=>{
   const form=event.target;if(!['record-form','backup-form'].includes(form.id))return;event.preventDefault();
   if(form.id==='backup-form'){try{previewRestore($('#backup-text').value);}catch(error){$('#backup-error').hidden=false;$('#backup-error').textContent=error.message;}return;}
   if(store.busy)return;const errorEl=$('#form-error');const submit=form.querySelector('[type="submit"]');submit.disabled=true;submit.textContent='正在保存…';errorEl.hidden=true;
-  try{const data=parseForm(form);await store.mutate(form.dataset.id?'PATCH':'POST',form.dataset.type,data,form.dataset.id?{id:form.dataset.id,version:Number(form.dataset.version)}:null);closeDialog();toast('记录已保存，首页摘要已更新。');}
+  try{const data=parseForm(form);await store.mutate(form.dataset.id?'PATCH':'POST',form.dataset.type,data,form.dataset.id?{id:form.dataset.id,version:Number(form.dataset.version)}:null,form.dataset.operationId);closeDialog();toast(data.recurrence&&!form.dataset.id?`已保存 ${data.recurrence.count} 个独立任务实例。`:'记录已保存，首页摘要已更新。');}
   catch(error){errorEl.textContent=error.message;errorEl.hidden=false;}
   finally{if(submit.isConnected){submit.disabled=false;submit.textContent='保存'+typeLabels[form.dataset.type];}}
 });
@@ -101,5 +125,6 @@ window.addEventListener('hashchange',()=>{if($('#app-dialog').open&&!store.busy)
 store.addEventListener('change',render);
 window.addEventListener('focus',()=>{if(initialized&&!store.busy&&!$('#app-dialog').open)store.refresh().catch(()=>{});});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&initialized&&!store.busy&&!$('#app-dialog').open)store.refresh().catch(()=>{});});
+document.addEventListener('input',event=>{if(event.target.id!=='task-search')return;const start=event.target.selectionStart,end=event.target.selectionEnd;planner.search=event.target.value;render();const field=$('#task-search');field.focus();field.setSelectionRange(start,end);});
 render();closeMenu();
-try{await store.refresh();if(!store.list('DashboardPreference').length){try{await savePreferences(defaultPreferences());}catch(error){if(error.status===409)await store.refresh();else throw error;}}currentView=preference().defaultView;initialized=true;render();}catch(error){toast(error.message);}
+try{await store.refresh();if(!store.list('DashboardPreference').length){try{await savePreferences(defaultPreferences());}catch(error){if(error.status===409)await store.refresh();else throw error;}}currentView=preference().defaultView;planner=plannerState(preference());initialized=true;render();}catch(error){toast(error.message);}

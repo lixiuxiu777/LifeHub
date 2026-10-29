@@ -13,3 +13,7 @@ export const records=sqliteTable('lifehub_records',{
 ]);
 export const revisions=sqliteTable('lifehub_revisions',{ownerId:text('owner_id').primaryKey(),revision:integer('revision').notNull()});
 export const restoreGuard=sqliteTable('lifehub_restore_guard',{ownerId:text('owner_id').primaryKey(),valid:integer('valid').notNull()},t=>[check('valid_restore_revision',sql`${t.valid} = 1`)]);
+export const operations=sqliteTable('lifehub_operations',{
+  id:text('id').primaryKey(),ownerId:text('owner_id').notNull(),digest:text('digest').notNull(),label:text('label').notNull(),
+  beforeJson:text('before_json'),afterJson:text('after_json'),resultId:text('result_id'),createdAt:text('created_at').notNull(),ordinal:integer('ordinal').notNull(),undone:integer('undone').notNull().default(0),
+},t=>[index('operations_owner_ordinal').on(t.ownerId,t.ordinal)]);
