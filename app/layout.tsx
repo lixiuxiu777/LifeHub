@@ -16,7 +16,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <head><meta name="color-scheme" content="light dark"/><link rel="stylesheet" href="/styles.css"/></head>
+      <head><meta name="color-scheme" content="light dark"/><link rel="stylesheet" href="/styles.css"/><link rel="stylesheet" href="/life.css"/></head>
       <body>{children}</body>
     </html>
   );

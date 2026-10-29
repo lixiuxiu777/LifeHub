@@ -1,4 +1,4 @@
-# 存储、身份与一致性（更新至第四阶段）
+# 存储、身份与一致性（更新至第五阶段）
 
 核对日期：2026-10-29。依据当前 Sites 1.1.2 技能、官方 Vinext starter、原生工具与实际本机 D1 测试。
 
@@ -29,11 +29,11 @@
 | CalendarEvent | title, allDay, startAt/endAt 或 startDate/endDate, timeZone, taskId, note |
 | Expense | title, direction（income/expense）, amountMinor, currency, date, category, paymentMethod, merchant, tags, note |
 | Budget | month, amountMinor, currency, scope（total/category）, category（总预算为 null）, note |
-| LearningGoal | title, targetMinutes, status, note |
-| StudySession | title, goalId（可选）, date, minutes, note |
-| Habit | title, note |
-| HabitCheckIn | habitId, date, note |
-| Bookmark | title, url, tags, note |
+| LearningGoal | title, targetMinutes, deadline, status, stages, resources, note |
+| StudySession | title, goalId（可选）, stageId（可选）, date, minutes, resources, note |
+| Habit | title, frequency, weeklyTarget, weekdays, startedOn, timeZone, archived, scheduleHistory, note |
+| HabitCheckIn | habitId, date, status（done/rest/void）, history, note |
+| Bookmark | title, url, category, tags（数组，兼容旧文本）, note |
 | DashboardPreference | theme, order, hidden, defaultView, dateFormat, timeFormat, timeZone |
 
 学习记录可关联自己的学习目标，打卡必须关联自己的习惯。外键限制删除仍有子记录的目标/习惯；每用户仅一份 DashboardPreference，同习惯同日只能打卡一次。同币种同月仅一份总预算、每分类仅一份分类预算。模型严格验证，未知字段、浮点最小货币单位、无效日期、危险链接均拒绝。
@@ -45,6 +45,8 @@
 第四阶段迁移 0002 新增 `lifehub_finance_receipts`，仅保存 operationId、owner、请求摘要、结果 ID 与时间，无记录正文；同请求重试不重复记账。财务增删改使用 revision 守卫和 D1 原子 batch，读取与写入竞争时回滚并提示刷新。不会清除待办/日程的最近撤销记录。旧消费兼容为支出，旧预算兼容为总预算，无用户数据迁移或 seed。
 
 财务导出在服务器重新读取当前身份的记录，按所选月份与单一币种生成。使用鉴权、同源 POST 与 private/no-store；搜索、备注、商家不进入 URL。文件只通过响应下载，服务端不保存公共副本。详细精度与导出规则见 [收支与预算](FINANCE.md)。
+
+第五阶段迁移 0003 新增 `lifehub_life_receipts`，仅存去重元数据。学习、习惯、打卡和收藏写入均由服务器验证关联、版本、revision 与 operationId，在 D1 batch 中原子提交。学习实际分钟仅来自独立学习记录；目标与阶段不产生额外时长。打卡撤销保留原 ID 和所有变更，规则调整保留历史并在下周生效。收藏导出按身份与筛选生成，无公共资源副本。完整规则见 [成长与日常](GROWTH-HABITS-BOOKMARKS.md)。
 
 ## 金额与时间
 
@@ -61,6 +63,8 @@
 写入成功才更新本机内存；不在联网失败时伪称已保存。进入页面、恢复窗口焦点、手动刷新会重取。无实时推送或离线队列。API 的版本条件更新避免覆盖其他页面的修改，409 时要求刷新核对。
 
 完整备份恢复在 D1 batch 事务中执行。每次增删改由数据库触发器更新用户 revision，恢复前比较预览 stateKey，并在事务内核对 revision，防止恢复预览后或恢复过程中并发写入被覆盖。任何模型、外键、唯一性或 revision 错误均回滚。
+
+第五阶段增加打卡历史保护：恢复不能遗漏现存打卡、截断其 history，或改变已有打卡习惯的历史规则、开始日与时区。不兼容旧备份返回 409，事务不执行；请先导出包含全部历史的最新备份。旧习惯未声明开始日时，使用创建日与最早打卡日中较早者，避免旧补记被排除；旧记录及旧备份均作相同规范化。
 
 ## 安全边界
 

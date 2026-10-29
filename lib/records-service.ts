@@ -6,6 +6,7 @@ import {ApiError} from './api-error';
 import {snapshot,stateKey} from './record-utils';
 import {plannerMutation} from './planner-service';
 import {financeMutation} from './finance-service';
+import {lifeMutation,protectHabitHistory} from './life-service';
 export {ApiError,snapshot,stateKey};
 
 export const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Vary':'Cookie'}});
@@ -28,6 +29,7 @@ export async function mutate(request:Request,method:string){
   const {user,db}=await authorize(request,true);const input=mutation.parse(await readJson(request));let previous:any=null;
   if(input.type==='Task'||input.type==='CalendarEvent')return json(await plannerMutation(db,user.userId,input,method),method==='POST'?201:200);
   if(input.type==='Expense'||input.type==='Budget')return json(await financeMutation(db,user.userId,input,method),method==='POST'?201:200);
+  if(['LearningGoal','StudySession','Habit','HabitCheckIn','Bookmark'].includes(input.type))return json(await lifeMutation(db,user.userId,input,method),method==='POST'?201:200);
   if(method!=='POST'){
     if(!input.id||!input.version)throw new ApiError(400,'缺少记录 ID 或版本。');
     previous=await db.prepare('SELECT * FROM lifehub_records WHERE id = ? AND owner_id = ? AND type = ?').bind(input.id,user.userId,input.type).first();
@@ -53,6 +55,7 @@ export async function restore(request:Request){
   // Read revision BEFORE snapshot; the transactional guard catches all later concurrent writes.
   const revision=await db.prepare('SELECT revision FROM lifehub_revisions WHERE owner_id=?').bind(user.userId).first<{revision:number}>();
   const current=await snapshot(db,user.userId);if(stateKey(current)!==input.expectedState)throw new ApiError(409,'备份预览后记录已变化，请重新预览再恢复。');
+  protectHabitHistory(current,records);
   const stamp=Date.now();await db.batch([
     db.prepare('INSERT OR IGNORE INTO lifehub_revisions (owner_id,revision) VALUES (?,0)').bind(user.userId),
     db.prepare('INSERT INTO lifehub_restore_guard (owner_id,valid) SELECT ?,CASE WHEN revision=? THEN 1 ELSE 0 END FROM lifehub_revisions WHERE owner_id=?').bind(user.userId,revision?.revision??0,user.userId),

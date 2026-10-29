@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import {dateKey} from '../public/js/date-utils.js';
 
 export const entityTypes=['Task','CalendarEvent','Expense','Budget','LearningGoal','StudySession','Habit','HabitCheckIn','Bookmark','DashboardPreference'] as const;
 export type EntityType=typeof entityTypes[number];
@@ -26,6 +27,11 @@ const eventSchema=z.object({
 const currency=z.enum(['CNY','USD','EUR','JPY','KWD']);
 // Integer minor units: CNY/USD/EUR=2, JPY=0, KWD=3 decimal places.
 const amountMinor=z.number().int().positive().max(1_000_000_000_000);
+const safeUrl=z.string().trim().url().max(2048).refine(v=>{try{const u=new URL(v);return ['http:','https:'].includes(u.protocol)&&!u.username&&!u.password;}catch{return false;}},'只支持不含账号密码的 http/https 链接');
+const resources=z.array(z.object({title,url:safeUrl}).strict()).max(30).default([]);
+const tags=z.array(z.string().trim().min(1).max(30)).max(20).default([]).transform(v=>[...new Set(v)]);
+const habitPlan=z.object({effectiveFrom:date,frequency:z.enum(['daily','weekly']),weeklyTarget:z.number().int().min(1).max(7),weekdays:z.array(z.number().int().min(1).max(7)).min(1).max(7).refine(v=>new Set(v).size===v.length)}).strict().refine(v=>v.frequency==='daily'||v.weeklyTarget<=v.weekdays.length,'每周目标不能超过计划天数');
+const checkStatus=z.enum(['done','rest','void']);
 export const preferenceSchema=z.object({
   theme:z.enum(['system','light','dark']),
   order:z.array(z.enum(cardIds)).length(cardIds.length).refine(a=>new Set(a).size===cardIds.length),
@@ -37,11 +43,11 @@ export const payloadSchemas={
   CalendarEvent:eventSchema,
   Expense:z.object({title:z.string().trim().max(160).default(''),direction:z.enum(['expense','income']).default('expense'),amountMinor,currency,date,category:z.string().trim().min(1).max(60),paymentMethod:z.enum(['未指定','现金','银行卡','支付宝','微信','转账','其他']).default('未指定'),merchant:z.string().trim().max(160).default(''),tags:z.array(z.string().trim().min(1).max(30)).max(20).default([]).transform(v=>[...new Set(v)]),note}).strict().transform(v=>({...v,title:v.title||`${v.category}${v.direction==='income'?'收入':'支出'}`})),
   Budget:z.object({month:z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),amountMinor,currency,scope:z.enum(['total','category']).default('total'),category:z.string().trim().min(1).max(60).nullable().default(null),note}).strict().refine(v=>v.scope==='category'?!!v.category:v.category===null,'分类预算必须指定分类；总预算不能指定分类'),
-  LearningGoal:z.object({title,targetMinutes:z.number().int().min(1).max(1_000_000),status:z.enum(['active','completed']).default('active'),note}).strict(),
-  StudySession:z.object({title,goalId:id.nullable().default(null),date,minutes:z.number().int().min(1).max(1440),note}).strict(),
-  Habit:z.object({title,note}).strict(),
-  HabitCheckIn:z.object({habitId:id,date,note}).strict(),
-  Bookmark:z.object({title,url:z.string().trim().url().max(2048).refine(v=>{try{const u=new URL(v);return ['http:','https:'].includes(u.protocol)&&!u.username&&!u.password;}catch{return false;}},'只支持不含账号密码的 http/https 链接'),tags:z.string().trim().max(200).default(''),note}).strict(),
+  LearningGoal:z.object({title,targetMinutes:z.number().int().min(1).max(1_000_000),deadline:date.nullable().default(null),status:z.enum(['active','completed']).default('active'),stages:z.array(z.object({id,title,targetMinutes:z.number().int().min(1).max(1_000_000),deadline:date.nullable().default(null)}).strict()).max(30).default([]).refine(v=>new Set(v.map(s=>s.id)).size===v.length,'阶段 ID 不能重复'),resources,note}).strict().superRefine((v,c)=>{if(v.stages.reduce((n,s)=>n+s.targetMinutes,0)>v.targetMinutes)c.addIssue({code:'custom',message:'阶段目标合计不能超过总目标分钟数'});if(v.deadline&&v.stages.some(s=>s.deadline&&s.deadline>v.deadline!))c.addIssue({code:'custom',message:'阶段期限不能晚于目标期限'});}),
+  StudySession:z.object({title,goalId:id.nullable().default(null),stageId:id.nullable().default(null),date,minutes:z.number().int().min(1).max(1440),resources,note}).strict().refine(v=>!v.stageId||!!v.goalId,'阶段必须属于学习目标'),
+  Habit:z.object({title,note,frequency:z.enum(['daily','weekly']).default('daily'),weeklyTarget:z.number().int().min(1).max(7).default(7),weekdays:z.array(z.number().int().min(1).max(7)).min(1).max(7).default([1,2,3,4,5,6,7]).refine(v=>new Set(v).size===v.length),startedOn:date.nullable().default(null),timeZone:timeZone.default('Asia/Shanghai'),archived:z.boolean().default(false),scheduleHistory:z.array(habitPlan).max(5200).default([])}).strict().refine(v=>v.frequency==='daily'||v.weeklyTarget<=v.weekdays.length,'每周目标不能超过计划天数').refine(v=>v.scheduleHistory.every((s,i)=>!i||s.effectiveFrom>v.scheduleHistory[i-1].effectiveFrom),'历史规则日期必须递增'),
+  HabitCheckIn:z.object({habitId:id,date,note,status:checkStatus.default('done'),history:z.array(z.object({at:instant,status:checkStatus,note:z.string().max(2000)}).strict()).max(5000).default([])}).strict().refine(v=>!v.history.length||v.history.at(-1)?.status===v.status&&v.history.at(-1)?.note===v.note,'打卡当前状态与历史不一致').refine(v=>v.history.every((s,i)=>!i||Date.parse(s.at)>=Date.parse(v.history[i-1].at)),'打卡历史时间必须递增'),
+  Bookmark:z.object({title,url:safeUrl,category:z.string().trim().min(1).max(60).default('未分类'),tags:z.preprocess(v=>typeof v==='string'?v.split(/[,，\n]/).map(s=>s.trim()).filter(Boolean):v,tags),note}).strict(),
   DashboardPreference:preferenceSchema,
 };
 export type Entity<K extends EntityType=EntityType>={id:string;type:K;createdAt:string;updatedAt:string;version:number;data:z.infer<typeof payloadSchemas[K]>};
@@ -61,13 +67,15 @@ export function parentOf(type:EntityType,data:any):{id:string;type:EntityType}|n
 export function validateBackup(input:unknown):Entity[]{
   const file=z.object({format:z.literal('lifehub-backup'),version:z.literal(2),exportedAt:instant,records:z.array(envelopeSchema).max(1000)}).strict().parse(input);
   const preference=file.records.find(v=>v.type==='DashboardPreference');const legacyZone=preference?preferenceSchema.parse(preference.data).timeZone:'Asia/Shanghai';
-  const records=file.records.map(v=>{let data=v.data;if(v.type==='Task'&&data&&typeof data==='object'&&!Object.hasOwn(data,'timeZone'))data={...data,timeZone:legacyZone};return {...v,data:parseData(v.type,data)};}) as Entity[];
+  const records=file.records.map(v=>{let data=v.data;if(['Task','Habit'].includes(v.type)&&data&&typeof data==='object'&&!Object.hasOwn(data,'timeZone'))data={...data,timeZone:legacyZone};return {...v,data:parseData(v.type,data)};}) as Entity[];
+  for(const r of records){if(r.type==='Habit'&&!(r.data as any).startedOn){const d=r.data as any;d.startedOn=[dateKey(r.createdAt,d.timeZone),...records.filter(c=>c.type==='HabitCheckIn'&&(c.data as any).habitId===r.id).map(c=>(c.data as any).date)].sort()[0];}}
   if(new Set(records.map(r=>r.id)).size!==records.length)throw new Error('备份包含重复 ID');
   if(records.filter(r=>r.type==='DashboardPreference').length>1)throw new Error('只能有一份首页配置');
   for(const record of records){
     if(Date.parse(record.updatedAt)<Date.parse(record.createdAt))throw new Error('更新时间早于创建时间');
     const parent=parentOf(record.type,record.data);
     if(parent&&!records.some(r=>r.id===parent.id&&r.type===parent.type))throw new Error('备份缺少关联记录');
+    if(record.type==='StudySession'){const d=record.data as any;if(d.stageId&&!((records.find(r=>r.id===d.goalId)?.data as any)?.stages||[]).some((s:any)=>s.id===d.stageId))throw new Error('备份缺少学习阶段');}
   }
   return relationOrder(records);
 }

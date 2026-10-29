@@ -1,8 +1,12 @@
 # LifeHub
 
-生活，有序生长。个人生活仪表盘，V1 第四阶段：收支记录与预算管理。
+生活，有序生长。个人生活仪表盘，V1 第五阶段：学习成长、习惯追踪与生活收藏。
 
 ## 已实现
+
+- 学习：带期限的目标、最多 30 个学习阶段、目标/阶段归属、真实时长、学习笔记、资料链接、完成进度与可筛选的历史记录。请求重试不重复计时。
+- 习惯：每天或每周目标、计划日与固定休息日、独立时区、月历、补记、备注、撤销与完整变更历史；连续计划日、周/月完成率、归档/恢复。规则调整从下周一生效，历史计划保留。
+- 收藏：标题/URL、分类、标签、个人笔记、组合搜索筛选、CSV/JSON 清单导出；外链安全打开。完整规则见 [成长与日常](docs/GROWTH-HABITS-BOOKMARKS.md)。
 
 - 收入/支出：金额、币种、账务日期、自定义分类、支付方式、商家、标签、备注；编辑、删除确认、全文搜索和日期/分类/收支/支付方式组合筛选。
 - 每月总预算及分类预算，按月与币种查看已支出、剩余及使用率，超支提示；收入不抵扣支出，分类预算不与总预算重复累加。
@@ -40,6 +44,7 @@ npm run build
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_new_talkback.sql
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0001_superb_mathemanic.sql
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0002_nasty_firelord.sql
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0003_volatile_hawkeye.sql
 npm run dev -- --hostname 127.0.0.1 --port 4173
 ```
 
@@ -65,6 +70,8 @@ npm run check
 
 备份格式 `lifehub-backup` version 2，包含记录与 DashboardPreference，不包含 owner_id 或登录凭据。恢复最多 1000 条 / 2 MB，替换当前用户数据；服务端校验模型、关联和预览版本后原子执行。ID 与创建时间保留，更新时间/版本刷新；任一约束失败整体回滚。请先导出当前备份。
 
+第五阶段起，恢复还会保护现有打卡及其变更/规则历史；缺少完整历史的旧备份会被拒绝，请使用最新备份。已有打卡的习惯通过归档保留历史，打卡撤销不物理删除。
+
 第一阶段 localStorage 只作为旧布局显式迁移来源，不自动覆盖数据库配置。当前记录与新偏好均不写入 localStorage。
 
 ## 结构
@@ -75,6 +82,7 @@ lib/domain.ts           十类模型、字段验证、关联与备份规则
 lib/records-service.ts  身份/所有权、CRUD、并发与原子恢复
 lib/planner-service.ts  待办/日程事务、重复生成、单步撤销与请求去重
 lib/finance-service.ts  收支/预算事务、版本和请求去重
+lib/life-service.ts     学习/习惯/收藏事务、历史保护与请求去重
 app/api/finance/export  按身份隔离的财务导出
 db/schema.ts            D1 / Drizzle schema
 drizzle/                已审核的 schema 迁移和元数据
@@ -86,6 +94,8 @@ public/js/money.js      精确金额解析与显示
 public/js/time.js       时区与格式处理
 public/js/planner-*.js  任务/日历视图、表单与纯数据规则
 public/js/finance-*.js  财务视图、表单、纯统计及导出规则
+public/js/life-*.js     学习、习惯、收藏视图、表单与纯统计/导出
+public/life.css         三模块的响应式样式
 public/styles.css      保留第一阶段设计系统并扩展表单
 worker/                 官方 Workers 入口
 ```

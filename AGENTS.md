@@ -1,6 +1,6 @@
 # LifeHub 工作约定
 
-- 当前为 V1 第四阶段：收支记录、月度及分类预算、真实分类支出与六个月趋势、筛选和财务导出。保留前三阶段功能，后续按用户阶段指令扩展。
+- 当前为 V1 第五阶段：学习目标/阶段/记录/资料、习惯计划/日历/保留历史的撤销、收藏分类/标签/笔记/导出。保留前四阶段功能，后续按用户阶段指令扩展。
 - 未经用户要求，不公开发布、不扩大 Sites 访问范围。
 - 每阶段验证完成后，将代码推送到 https://github.com/lixiuxiu777/LifeHub.git 。禁止推送个人记录、备份、凭证、运行时数据库。
 - `.openai/hosting.json` 的 project_id 必须沿用；不要重复创建 Site。
@@ -15,3 +15,6 @@
 - 全天事件 endDate 不包含结束日期，界面结束日期包含当天。定时事件存 UTC，任务截止日按任务自身时区解释。
 - Expense / Budget 写入走 finance-service 的 revision 事务、operationId 去重、所有权和版本校验。收入与支出均存正整数最小单位，用 direction 区分；禁止跨币种累加或用收入冲抵预算支出。
 - 财务汇总和导出共用 finance-data。明细筛选不改变整月摘要/预算/图表；月度 JSON 不是完整恢复备份。导出用同源鉴权 POST，避免搜索和商家出现在 URL 日志中。
+- LearningGoal / StudySession / Habit / HabitCheckIn / Bookmark 写入走 life-service 的 revision 事务与 operationId 去重；时长仅由独立 StudySession 计算，不能把阶段/目标预估时间计入实际学习。
+- 打卡撤销必须保留同一日期记录及追加 history；不可直接删除打卡历史。有打卡的习惯应归档。规则修改从下周一生效，保留 scheduleHistory。恢复备份不得丢失现有打卡或改写历史规则。
+- 外链仅允许无嵌入凭据的 http/https，使用新标签、noopener/noreferrer，不自动抓取网页或外部图片。收藏导出按当前身份与筛选生成，禁止写入公共资源。

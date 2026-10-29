@@ -8,6 +8,9 @@ import {plannerState,plannerView,shiftMonth} from './planner-view.js';
 import {updatePlannerForm} from './planner-forms.js';
 import {financeState,financeView} from './finance-view.js';
 import {shiftFinanceMonth} from './finance-data.js';
+import {lifeState,learningView,habitsView,collectionsView} from './life-views.js';
+import {updateLifeForm,stageRow,resourceRow} from './life-forms.js';
+import {habitStats} from './life-data.js';
 
 const $=selector=>document.querySelector(selector);
 const store=new DataStore();let currentView='overview';let initialized=false;let dialogReturnFocus;let toastTimer;let pendingRestore=null;
@@ -15,6 +18,7 @@ const themeMedia=matchMedia('(prefers-color-scheme: dark)');const menuMedia=matc
 const preference=()=>store.list('DashboardPreference')[0]?.data||defaultPreferences();
 let planner=plannerState(defaultPreferences());
 let finance=financeState(defaultPreferences());
+let life=lifeState(defaultPreferences());
 let legacy=null;try{const data=localStorage.getItem(STORAGE_KEY);if(data)legacy=validatePreferences(JSON.parse(data));}catch{/* Legacy data is optional; never overwrite database records automatically. */}
 function toast(message){clearTimeout(toastTimer);$('#toast').textContent=message;$('#toast').hidden=false;toastTimer=setTimeout(()=>{$('#toast').hidden=true;},5000);}
 function applyTheme(){const p=preference();const dark=p.theme==='dark'||p.theme==='system'&&themeMedia.matches;document.documentElement.dataset.theme=dark?'dark':'light';$('#theme-toggle').innerHTML=icon(dark?'sun':'moon');$('#theme-toggle').setAttribute('aria-label',dark?'切换到浅色主题':'切换到深色主题');}
@@ -33,11 +37,11 @@ function render(){
   if(store.loading)body=`<section class="no-cards" role="status"><div class="skeleton"></div><h2>正在读取你的生活空间</h2><p>数据加载完成前，不显示任何统计数字。</p></section>`;
   else if(!store.lastSynced)body=`<section class="no-cards"><h1>暂时无法读取记录</h1><p>请检查连接并重试。尚未读取到数据，不代表没有记录。</p><button class="button solid" data-action="refresh">重新连接</button></section>`;
   else if(!current)body='<section class="no-cards"><h1>页面不存在</h1><a class="button solid" href="#/home">返回首页</a></section>';
-  else body=current.id==='home'?homeView(store,preference(),currentView):current.id==='settings'?settingsView(store,preference(),legacy):current.id==='tasks'?plannerView(store,preference(),planner):current.id==='expenses'?financeView(store,preference(),finance):moduleView(current,store,preference());
+  else body=current.id==='home'?homeView(store,preference(),currentView):current.id==='settings'?settingsView(store,preference(),legacy):current.id==='tasks'?plannerView(store,preference(),planner):current.id==='expenses'?financeView(store,preference(),finance):current.id==='learning'?learningView(store,preference(),life.learning):current.id==='habits'?habitsView(store,preference(),life.habits):current.id==='collections'?collectionsView(store,preference(),life.collections):moduleView(current,store,preference());
   const undo=store.lastSynced&&(store.undo||current?.id==='tasks')?`<div class="undo-banner" role="status"><span>${icon('refresh')}${store.undo?'最近操作：'+escape(store.undo.label):'可撤销最近一步待办或日程操作'}</span><button class="text-link" data-action="undo" ${!store.undo||store.busy?'disabled':''}>撤销最近操作</button></div>`:'';
   $('#main').innerHTML=error+undo+body;
 }
-function openDialog(content){if(!$('#app-dialog').open)dialogReturnFocus=document.activeElement;$('#app-dialog').innerHTML=`<div class="dialog-top"><span class="eyebrow">LIFEHUB</span><button class="icon-button" data-action="close-dialog" aria-label="关闭弹窗">${icon('close')}</button></div>${content}`;if(!$('#app-dialog').open)$('#app-dialog').showModal();}
+function openDialog(content){if(!$('#app-dialog').open)dialogReturnFocus=document.activeElement;$('#app-dialog').innerHTML=`<div class="dialog-top"><span class="eyebrow">LIFEHUB</span><button class="icon-button" data-action="close-dialog" aria-label="关闭弹窗">${icon('close')}</button></div>${content}`;const form=$('#record-form');if(form?.dataset.type==='Habit')updateLifeForm(form,form.querySelector('[name="frequency"]'),store);if(!$('#app-dialog').open)$('#app-dialog').showModal();}
 function closeDialog(){if(store.busy){toast('正在处理，请稍候。');return;}$('#app-dialog').close();pendingRestore=null;if(dialogReturnFocus?.isConnected)dialogReturnFocus.focus();}
 async function savePreferences(data){const record=store.list('DashboardPreference')[0];await store.mutate(record?'PATCH':'POST','DashboardPreference',validatePreferences(data),record);}
 function customize(focus){
@@ -47,6 +51,7 @@ function customize(focus){
 function create(type,seed){openDialog(recordForm(type,seed?{data:seed}:null,store,preference()));}
 function quickAdd(){openDialog(`<h2 id="dialog-title">记录一件小事</h2><p class="dialog-description">选择想记录的内容，保存后会更新首页摘要。</p>${quickGrid()}`);}
 function confirmDelete(record){
+  if(record.type==='HabitCheckIn'){openDialog(`<h2 id="dialog-title">撤销这条打卡？</h2><p class="dialog-description">原日期、记录 ID 和变更历史都会保留。之后可从习惯日历重新设为完成或休息日。</p><div class="dialog-footer"><button class="button outline" data-action="close-dialog">取消</button><button class="button danger" id="confirm-checkin-void">确认撤销</button></div>`);const operationId=crypto.randomUUID();$('#confirm-checkin-void').addEventListener('click',()=>act(async()=>{await store.mutate('DELETE',record.type,null,record,operationId);closeDialog();toast('打卡已撤销，历史完整保留。');}));return;}
   const plannerRecord=['Task','CalendarEvent'].includes(record.type),operationId=crypto.randomUUID();
   const message=record.type==='Task'?`${record.data.seriesId?'仅删除当前重复实例，其他实例与历史保留。':''}子任务会保留并提升为顶层任务，关联日程保留并解除链接。可撤销最近一步。`:record.type==='CalendarEvent'?'只删除此日程，关联任务保留。可撤销最近一步。':'删除后首页摘要会更新。此类记录请通过备份恢复。';
   openDialog(`<h2 id="dialog-title">删除这条${typeLabels[record.type]}？</h2><p class="dialog-description">${escape(titleFor(record,store))}<br>${message}</p><div class="dialog-footer"><button class="button outline" data-action="close-dialog">取消</button><button class="button danger" id="confirm-delete">确认删除</button></div>`);
@@ -61,9 +66,10 @@ function previewRestore(text){
   if(text.length>2_000_000)throw new Error('备份超过 2 MB 限制。');let backup;try{backup=JSON.parse(text);}catch{throw new Error('JSON 格式无效。');}
   if(backup.format!=='lifehub-backup'||backup.version!==2||!Array.isArray(backup.records)||backup.records.length>1000)throw new Error('请使用 LifeHub V2 格式备份，最多 1000 条记录。');
   pendingRestore={backup,expectedState:store.stateKey};
-  openDialog(`<h2 id="dialog-title">确认替换当前数据？</h2><p class="dialog-description">备份包含 ${backup.records.length} 条记录（含配置）。将替换当前 ${store.records.length} 条记录。服务器会校验所有字段、关联与记录版本；任一失败会回滚整个恢复。</p><p class="small-note">创建时间与 ID 保留，更新时间和版本刷新。恢复不会改变站点访问权限。</p><div class="dialog-footer"><button class="button outline" data-action="close-dialog">取消</button><button class="button danger" data-action="restore-confirm">确认恢复并替换</button></div>`);
+  openDialog(`<h2 id="dialog-title">确认替换当前数据？</h2><p class="dialog-description">备份包含 ${backup.records.length} 条记录（含配置）。将替换当前 ${store.records.length} 条记录。服务器会校验所有字段、关联与记录版本；任一失败会回滚整个恢复。</p><p class="small-note">创建时间与 ID 保留，更新时间和版本刷新。恢复不会改变站点访问权限。现有打卡及变更历史不可丢失；不含完整历史的旧备份会被拒绝。</p><div class="dialog-footer"><button class="button outline" data-action="close-dialog">取消</button><button class="button danger" data-action="restore-confirm">确认恢复并替换</button></div>`);
 }
 async function act(action){if(store.busy){toast('正在保存或刷新，请稍候。');return;}try{await action();}catch(error){toast(error.message);}}
+async function saveHabitDay(habit,date,status,operationId){const record=store.list('HabitCheckIn').find(r=>r.data.habitId===habit.id&&r.data.date===date);await store.mutate(record?'PATCH':'POST','HabitCheckIn',{habitId:habit.id,date,status,note:record?.data.note||''},record,operationId);toast(status==='void'?'已撤销，原打卡和变更历史保留。':status==='rest'?'休息日已保存，连续记录不会因此中断。':'打卡已保存。');}
 document.addEventListener('click',event=>{
   const el=event.target.closest('[data-action]');if(!el||el.disabled)return;const a=el.dataset.action;
   if(a==='close-dialog'){closeDialog();return;}
@@ -73,6 +79,17 @@ document.addEventListener('click',event=>{
   if(a==='edit'){const record=store.get(el.dataset.id);if(record&&!store.busy)openDialog(recordForm(record.type,record,store,preference()));return;}
   if(a==='delete'){const record=store.get(el.dataset.id);if(record&&!store.busy)confirmDelete(record);return;}
   if(a==='import'){importDialog();return;}
+  if(a==='learning-panel'){life.learning.panel=el.dataset.panel;render();return;}
+  if(a==='study-for-goal'){const goal=store.get(el.dataset.id);create('StudySession',{goalId:goal.id,stageId:el.dataset.stage||null,title:el.dataset.stage?goal.data.stages.find(s=>s.id===el.dataset.stage).title:goal.data.title});return;}
+  if(a==='add-stage'||a==='add-resource'){const container=$(a==='add-stage'?'#life-stages':'#life-resources');if(container.children.length>=30){toast('最多添加 30 项。');return;}container.insertAdjacentHTML('beforeend',a==='add-stage'?stageRow():resourceRow());container.lastElementChild.querySelector('input')?.focus();return;}
+  if(a==='remove-life-row'){el.closest('.stage-form-row,.resource-form-row').remove();return;}
+  if(a==='life-reset'){const base=lifeState(preference());life[el.dataset.module]={...base[el.dataset.module],...(el.dataset.module==='learning'?{panel:life.learning.panel}:{})};render();return;}
+  if(a==='life-page-prev'||a==='life-page-next'){const state=life[el.dataset.module];state.page=Math.max(1,state.page+(a==='life-page-prev'?-1:1));render();return;}
+  if(a==='habit-select'){life.habits.habitId=el.dataset.id;const habit=store.get(el.dataset.id),today=habitStats(habit,store.records).today;life.habits.month=today.slice(0,7);life.habits.day=today;render();return;}
+  if(a==='habit-date'){life.habits.day=el.dataset.date;life.habits.month=el.dataset.date.slice(0,7);render();return;}
+  if(a==='habit-prev'||a==='habit-next'){life.habits.month=shiftFinanceMonth(life.habits.month,a==='habit-prev'?-1:1);life.habits.day=life.habits.month+'-01';render();return;}
+  if(a==='habit-today'){const habit=store.list('Habit').find(h=>h.id===life.habits.habitId)||store.list('Habit').find(h=>life.habits.archived||!h.data.archived);const today=habit?habitStats(habit,store.records).today:dateKey(new Date(),preference().timeZone);life.habits.day=today;life.habits.month=today.slice(0,7);render();return;}
+  if(a==='habit-add-note'){create('HabitCheckIn',{habitId:el.dataset.id,date:life.habits.day,status:'done'});return;}
   if(a==='finance-add'){create('Expense',{direction:el.dataset.direction,currency:finance.currency,date:finance.month===dateKey(new Date(),preference().timeZone).slice(0,7)?dateKey(new Date(),preference().timeZone):finance.month+'-01'});return;}
   if(a==='finance-add-budget'){create('Budget',{month:finance.month,currency:finance.currency});return;}
   if(a==='finance-panel'){finance.panel=el.dataset.panel;render();return;}
@@ -94,6 +111,9 @@ document.addEventListener('click',event=>{
     if(a==='refresh'){await store.refresh();toast('已重新读取数据库。');}
     if(a==='export')exportBackup();
     if(a==='finance-export'){await store.exportFinance(finance,el.dataset.format);toast('已生成导出并发起下载，请检查浏览器下载列表。');}
+    if(a==='bookmark-export'){await store.exportBookmarks(life.collections,el.dataset.format);toast('已生成收藏清单并发起下载，请检查浏览器下载列表。');}
+    if(a==='habit-status'){await saveHabitDay(store.get(el.dataset.id),life.habits.day,el.dataset.status,el.dataset.operationId);}
+    if(a==='habit-archive'){const record=store.get(el.dataset.id);await store.mutate('PATCH','Habit',{...record.data,archived:!record.data.archived},record);toast(record.data.archived?'习惯已恢复。':'习惯已归档，打卡历史保留。');}
     if(a==='undo'){await store.undoLast();toast('最近一步已撤销，事项与首页已更新。');}
     if(a==='cycle-task'){const r=store.get(el.dataset.id);await store.mutate('PATCH','Task',{...r.data,status:{todo:'in_progress',in_progress:'done',done:'todo'}[r.data.status]},r);toast('任务状态已保存，可撤销最近操作。');}
     if(a==='reset-layout'){const p=preference();await savePreferences({...p,order:cards.map(c=>c.id),hidden:[],defaultView:'overview'});currentView='overview';render();customize('[data-action="reset-layout"]');toast('默认布局已保存。');}
@@ -102,15 +122,17 @@ document.addEventListener('click',event=>{
       await savePreferences({...p,order});customize(`[data-id="${el.dataset.id}"]:not(:disabled)`);
     }
     if(a==='toggle-task'){const r=store.get(el.dataset.id);await store.mutate('PATCH',r.type,{...r.data,status:r.data.status==='done'?'todo':'done'},r);toast('待办状态已更新。');}
-    if(a==='checkin'){await store.mutate('POST','HabitCheckIn',{habitId:el.dataset.id,date:dateKey(new Date(),preference().timeZone),note:''});toast('今天的坚持，已记录。');}
+    if(a==='checkin'){const habit=store.get(el.dataset.id);await saveHabitDay(habit,habitStats(habit,store.records).today,'done');}
     if(a==='restore-confirm'&&pendingRestore){const pending=pendingRestore;await store.restore(pending.backup,pending.expectedState);currentView=preference().defaultView;closeDialog();render();toast('记录与首页配置已恢复。');}
     if(a==='migrate-legacy'&&legacy){await savePreferences({...preference(),order:legacy.order,hidden:legacy.hidden,theme:legacy.theme});legacy=null;render();toast('已将原本机布局保存到当前数据空间。');}
   });
 });
 document.addEventListener('change',event=>{
   const el=event.target;
+  if(el.dataset.lifeFilter){const state=life[el.dataset.module];if(el.dataset.lifeFilter==='month'&&!/^\d{4}-(0[1-9]|1[0-2])$/.test(el.value)){render();return;}state[el.dataset.lifeFilter]=el.value;state.page=1;if(el.dataset.module==='habits')state.day=state.month+'-01';render();return;}
+  if(el.dataset.lifeOption){life.habits[el.dataset.lifeOption]=el.checked;render();return;}
   if(el.dataset.financeFilter){if(el.dataset.financeFilter==='month'&&!/^\d{4}-(0[1-9]|1[0-2])$/.test(el.value)){render();return;}finance[el.dataset.financeFilter]=el.value;finance.page=1;if(['month','currency'].includes(el.dataset.financeFilter))finance.from=finance.to='';render();return;}
-  if(el.closest('#record-form'))updatePlannerForm(el.closest('#record-form'),el);
+  if(el.closest('#record-form')){updatePlannerForm(el.closest('#record-form'),el);updateLifeForm(el.closest('#record-form'),el,store);}
   if(el.dataset.taskFilter){planner[el.dataset.taskFilter]=el.value;render();return;}
   if(el.dataset.calendarOption){planner[el.dataset.calendarOption]=el.checked;render();return;}
   if(el.id==='current-view'){currentView=el.value;render();return;}
@@ -137,6 +159,6 @@ window.addEventListener('hashchange',()=>{if($('#app-dialog').open&&!store.busy)
 store.addEventListener('change',render);
 window.addEventListener('focus',()=>{if(initialized&&!store.busy&&!$('#app-dialog').open)store.refresh().catch(()=>{});});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&initialized&&!store.busy&&!$('#app-dialog').open)store.refresh().catch(()=>{});});
-document.addEventListener('input',event=>{if(!['task-search','finance-search'].includes(event.target.id))return;const id=event.target.id,start=event.target.selectionStart,end=event.target.selectionEnd;(id==='task-search'?planner:finance).search=event.target.value;if(id==='finance-search')finance.page=1;render();const field=$('#'+id);field.focus();field.setSelectionRange(start,end);});
+document.addEventListener('input',event=>{if(!['task-search','finance-search','learning-search','collections-search'].includes(event.target.id))return;const id=event.target.id,start=event.target.selectionStart,end=event.target.selectionEnd,state=id==='task-search'?planner:id==='finance-search'?finance:id==='learning-search'?life.learning:life.collections;state.search=event.target.value;state.page=1;render();const field=$('#'+id);field.focus();field.setSelectionRange(start,end);});
 render();closeMenu();
-try{await store.refresh();if(!store.list('DashboardPreference').length){try{await savePreferences(defaultPreferences());}catch(error){if(error.status===409)await store.refresh();else throw error;}}currentView=preference().defaultView;planner=plannerState(preference());initialized=true;render();}catch(error){toast(error.message);}
+try{await store.refresh();if(!store.list('DashboardPreference').length){try{await savePreferences(defaultPreferences());}catch(error){if(error.status===409)await store.refresh();else throw error;}}currentView=preference().defaultView;planner=plannerState(preference());life=lifeState(preference());initialized=true;render();}catch(error){toast(error.message);}
