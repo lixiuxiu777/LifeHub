@@ -32,7 +32,7 @@ export function lifeForm(type,record,store,p){
     description='可补记开始日至今天的记录。撤销只改变当前状态，保留原打卡和每次变更；休息日不增加连续天数，也不打断连续记录。';
   }
   if(type==='Bookmark'){
-    controls=title+field('网页 URL',input('url',d.url,'type="url" maxlength="2048" placeholder="https://" required'))+field('分类',input('category',d.category||'未分类','maxlength="60" list="bookmark-categories" required'))+field('标签（逗号分隔）',input('tags',(d.tags||[]).join(', '),'maxlength="640"'))+`<datalist id="bookmark-categories">${[...new Set(store.list('Bookmark').map(r=>r.data.category))].map(v=>`<option value="${escape(v)}"></option>`).join('')}</datalist>`;
+    controls=title+field('网页 URL',input('url',d.url,'type="url" maxlength="2048" placeholder="https://" required'))+field('分类',input('category',d.category||'未分类','maxlength="60" list="bookmark-categories" required'))+field('标签（逗号分隔）',input('tags',(d.tags||[]).join(', '),'maxlength="20100"'))+`<datalist id="bookmark-categories">${[...new Set(store.list('Bookmark').map(r=>r.data.category))].map(v=>`<option value="${escape(v)}"></option>`).join('')}</datalist>`;
     description='手动保存网页标题与链接，不自动请求网页。只接受无账号密码的 http/https 地址；外部页面在新标签安全打开。';
   }
   controls+=field(type==='Bookmark'?'个人笔记':type==='StudySession'?'学习笔记':'备注',`<textarea name="note" rows="4" maxlength="2000">${escape(d.note||'')}</textarea>`,true);
@@ -51,6 +51,6 @@ export function parseLifeForm(form){
   if(['LearningGoal','StudySession'].includes(type))d.resources=[...form.querySelectorAll('.resource-form-row')].map(row=>({title:row.querySelector('[name="resourceTitle"]').value.trim(),url:row.querySelector('[name="resourceUrl"]').value.trim()}));
   if(type==='Habit'){Object.assign(d,{title:get('title'),frequency:raw.frequency,weeklyTarget:Number(raw.weeklyTarget),weekdays:new FormData(form).getAll('weekdays').map(Number),startedOn:raw.startedOn,timeZone:raw.timeZone,archived:raw.archived==='true'});if(!d.weekdays.length)throw new Error('请至少选择一个计划日');}
   if(type==='HabitCheckIn')Object.assign(d,{habitId:raw.habitId,date:raw.date,status:raw.status});
-  if(type==='Bookmark'){const values=get('tags').split(/[,，\n]/).map(v=>v.trim()).filter(Boolean);if(values.length>20||values.some(v=>v.length>30))throw new Error('最多 20 个标签，每个不超过 30 字');Object.assign(d,{title:get('title'),url:get('url'),category:get('category'),tags:[...new Set(values)]});}
+  if(type==='Bookmark'){const values=get('tags').split(/[,，\n]/).map(v=>v.trim()).filter(Boolean);if(values.length>100||values.some(v=>v.length>200))throw new Error('最多 100 个标签，每个不超过 200 字');Object.assign(d,{title:get('title'),url:get('url'),category:get('category'),tags:[...new Set(values)]});}
   return d;
 }

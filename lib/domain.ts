@@ -29,7 +29,8 @@ const currency=z.enum(['CNY','USD','EUR','JPY','KWD']);
 const amountMinor=z.number().int().positive().max(1_000_000_000_000);
 const safeUrl=z.string().trim().url().max(2048).refine(v=>{try{const u=new URL(v);return ['http:','https:'].includes(u.protocol)&&!u.username&&!u.password;}catch{return false;}},'只支持不含账号密码的 http/https 链接');
 const resources=z.array(z.object({title,url:safeUrl}).strict()).max(30).default([]);
-const tags=z.array(z.string().trim().min(1).max(30)).max(20).default([]).transform(v=>[...new Set(v)]);
+// Legacy bookmark tags were a 200-character text field; preserve even long/split legacy labels.
+const tags=z.array(z.string().trim().min(1).max(200)).max(100).default([]).transform(v=>[...new Set(v)]);
 const habitPlan=z.object({effectiveFrom:date,frequency:z.enum(['daily','weekly']),weeklyTarget:z.number().int().min(1).max(7),weekdays:z.array(z.number().int().min(1).max(7)).min(1).max(7).refine(v=>new Set(v).size===v.length)}).strict().refine(v=>v.frequency==='daily'||v.weeklyTarget<=v.weekdays.length,'每周目标不能超过计划天数');
 const checkStatus=z.enum(['done','rest','void']);
 export const preferenceSchema=z.object({
