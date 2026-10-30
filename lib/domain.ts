@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {dateKey} from '../public/js/date-utils.js';
+import {backupScopes} from '../public/js/backup-data.js';
 
 export const entityTypes=['Task','CalendarEvent','Expense','Budget','LearningGoal','StudySession','Habit','HabitCheckIn','Bookmark','DashboardPreference'] as const;
 export type EntityType=typeof entityTypes[number];
@@ -65,13 +66,23 @@ export function parentOf(type:EntityType,data:any):{id:string;type:EntityType}|n
   if(type==='CalendarEvent'&&data.taskId)return {id:data.taskId,type:'Task'};
   return null;
 }
+export const backupScopeNames=['all','tasks','expenses','learning','habits','collections','preferences'] as const;
+export type BackupScope=typeof backupScopeNames[number];
+const backupBase={format:z.literal('lifehub-backup'),exportedAt:instant,records:z.array(envelopeSchema).max(1000)};
+export const backupFileSchema=z.union([z.object({...backupBase,version:z.literal(2)}).strict(),z.object({...backupBase,version:z.literal(3),scope:z.enum(backupScopeNames)}).strict()]);
+export function parseBackup(input:unknown){const file=backupFileSchema.parse(input);const scope:BackupScope=file.version===2?'all':file.scope;const records=validateBackup(file);if(records.some(r=>!backupScopes[scope].types.includes(r.type)))throw new Error('备份包含所声明范围以外的记录');return {scope,records,exportedAt:file.exportedAt,version:file.version};}
 export function validateBackup(input:unknown):Entity[]{
-  const file=z.object({format:z.literal('lifehub-backup'),version:z.literal(2),exportedAt:instant,records:z.array(envelopeSchema).max(1000)}).strict().parse(input);
+  const file=backupFileSchema.parse(input);
   const preference=file.records.find(v=>v.type==='DashboardPreference');const legacyZone=preference?preferenceSchema.parse(preference.data).timeZone:'Asia/Shanghai';
   const records=file.records.map(v=>{let data=v.data;if(['Task','Habit'].includes(v.type)&&data&&typeof data==='object'&&!Object.hasOwn(data,'timeZone'))data={...data,timeZone:legacyZone};return {...v,data:parseData(v.type,data)};}) as Entity[];
   for(const r of records){if(r.type==='Habit'&&!(r.data as any).startedOn){const d=r.data as any;d.startedOn=[dateKey(r.createdAt,d.timeZone),...records.filter(c=>c.type==='HabitCheckIn'&&(c.data as any).habitId===r.id).map(c=>(c.data as any).date)].sort()[0];}}
+  return validateRecordGraph(records);
+}
+export function validateRecordGraph(records:Entity[]):Entity[]{
   if(new Set(records.map(r=>r.id)).size!==records.length)throw new Error('备份包含重复 ID');
   if(records.filter(r=>r.type==='DashboardPreference').length>1)throw new Error('只能有一份首页配置');
+  const dailyMinutes=new Map<string,number>();
+  for(const r of records.filter(r=>r.type==='StudySession')){const d=r.data as any;const total=(dailyMinutes.get(d.date)||0)+d.minutes;if(total>1440)throw new Error('同一天学习记录合计不能超过 1440 分钟');dailyMinutes.set(d.date,total);}
   for(const record of records){
     if(Date.parse(record.updatedAt)<Date.parse(record.createdAt))throw new Error('更新时间早于创建时间');
     const parent=parentOf(record.type,record.data);

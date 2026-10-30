@@ -14,6 +14,9 @@ export const records=sqliteTable('lifehub_records',{
 export const revisions=sqliteTable('lifehub_revisions',{ownerId:text('owner_id').primaryKey(),revision:integer('revision').notNull()});
 export const financeReceipts=sqliteTable('lifehub_finance_receipts',{id:text('id').primaryKey(),ownerId:text('owner_id').notNull(),digest:text('digest').notNull(),resultId:text('result_id').notNull(),createdAt:text('created_at').notNull()});
 export const lifeReceipts=sqliteTable('lifehub_life_receipts',{id:text('id').primaryKey(),ownerId:text('owner_id').notNull(),digest:text('digest').notNull(),resultId:text('result_id').notNull(),createdAt:text('created_at').notNull()});
+export const backupPlans=sqliteTable('lifehub_backup_plans',{
+  id:text('id').primaryKey(),ownerId:text('owner_id').notNull(),scope:text('scope').notNull(),mode:text('mode').notNull(),digest:text('digest').notNull(),expectedRevision:integer('expected_revision').notNull(),summary:text('summary').notNull(),createdAt:text('created_at').notNull(),expiresAt:text('expires_at').notNull(),usedAt:text('used_at'),
+},t=>[index('backup_plans_owner_expiry').on(t.ownerId,t.expiresAt)]);
 export const restoreGuard=sqliteTable('lifehub_restore_guard',{ownerId:text('owner_id').primaryKey(),valid:integer('valid').notNull()},t=>[check('valid_restore_revision',sql`${t.valid} = 1`)]);
 export const operations=sqliteTable('lifehub_operations',{
   id:text('id').primaryKey(),ownerId:text('owner_id').notNull(),digest:text('digest').notNull(),label:text('label').notNull(),

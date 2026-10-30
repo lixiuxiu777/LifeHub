@@ -5,6 +5,7 @@ import {dateKey,addDays} from '../public/js/date-utils.js';
 import {undoInfo} from './planner-service';
 type Input={id?:string;type:EntityType;version?:number;data?:unknown;operationId?:string};
 export async function lifeMutation(db:D1Database,owner:string,input:Input,method:string){
+  if(input.type==='DashboardPreference'&&method==='DELETE')throw new ApiError(400,'请通过恢复默认布局重置配置');
   const operationId=input.operationId??crypto.randomUUID();
   const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify({method,type:input.type,id:input.id,version:input.version,data:input.data}))))).map(b=>b.toString(16).padStart(2,'0')).join('');
   const receipt=await db.prepare('SELECT digest,result_id FROM lifehub_life_receipts WHERE id=? AND owner_id=?').bind(operationId,owner).first<any>();

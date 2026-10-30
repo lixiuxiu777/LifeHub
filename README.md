@@ -1,6 +1,10 @@
 # LifeHub
 
-生活，有序生长。个人生活仪表盘，V1 第五阶段：学习成长、习惯追踪与生活收藏。
+生活，有序生长。个人生活仪表盘，V1 第六阶段：数据隔离、同步与安全备份。
+
+## 本阶段状态
+
+代码与本机验收已完成，保持现有 Site 和 owner-only 权限。**本阶段未经确认不部署：线上仍为第五阶段，本阶段仅保存待审版本并推送 GitHub。** 手机浏览器与真实不同设备的端到端验收仍待完成，详见 [本阶段交付与验收](docs/PHASE6-ACCEPTANCE.md)。
 
 ## 已实现
 
@@ -24,7 +28,7 @@
 - 六类快速新增：待办、日程、消费、学习记录、习惯打卡、收藏。模块页可维护学习目标、习惯和预算，并编辑/删除记录。
 - 首页摘要从同一份真实记录计算；增删改成功后更新。不默认加入演示数据。
 - 卡片显示/隐藏/排序、默认视图、日期/时间格式、显示时区、主题与恢复默认布局，均保存在 D1。
-- 完整 JSON 备份、文件或粘贴恢复、恢复预览与确认、原子事务与失败回滚。
+- 完整 / 单模块 / 首页配置 JSON 备份；服务端格式验证、范围与冲突预览、明确确认、原子恢复与失败回滚。默认只添加新记录，不静默覆盖。
 - 桌面侧栏与手机导航；空状态、真实加载状态、错误/冲突提示。
 
 无 AI API、无 API Key、无第三方追踪。代码仓库仅存放代码和数据库结构，禁止提交个人记录、备份、凭据或运行时数据库。
@@ -45,6 +49,7 @@ node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0001_superb_mathemanic.sql
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0002_nasty_firelord.sql
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0003_volatile_hawkeye.sql
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0004_mixed_tempest.sql
 npm run dev -- --hostname 127.0.0.1 --port 4173
 ```
 
@@ -62,13 +67,13 @@ npm run check
 
 私有部署使用 Sites 原生 ChatGPT 登录。API 缺少身份返回 401，写入校验同源 Origin，所有 SQL 按服务端 owner_id 过滤。跨设备使用**同一站点、同一 ChatGPT 账户**，共享同一 D1 数据。没有公开个人数据的业务接口，不将浏览器保存描述为云同步。
 
-进入页面、窗口重新获得焦点、手动刷新时读取服务器；没有实时推送、离线写入或离线冲突合并。失败保留错误，服务器确认前不显示保存成功。版本冲突返回 409，需刷新核对。完整方案见 [存储与同步](docs/STORAGE-AND-SYNC.md)。
+前台约每 15 秒检查服务器 revision，变化时重读；重新获得焦点或联网时检查，失败退避到 30 / 60 秒。后台暂停；编辑时提示远端变化并保留草稿，关闭弹窗后读取。没有实时推送、离线写入或自动冲突合并。写入使用 UUID 回执去重；超时不宣称成功。身份变化清除内存和表单，丢弃旧响应；版本冲突返回 409，需核对。完整方案见 [存储与同步](docs/STORAGE-AND-SYNC.md)。
 
 ## 金额、时间与备份
 
 金额使用最小币种单位整数：CNY/USD/EUR 两位、JPY 零位、KWD 三位；拒绝额外小数与科学计数法。汇总采用 BigInt，按币种分别显示，不自动换汇。日程保存 UTC 时间点与时区；整日待办、消费、学习、打卡使用日期字符串。夏令时重复或不存在的输入要求修正。
 
-备份格式 `lifehub-backup` version 2，包含记录与 DashboardPreference，不包含 owner_id 或登录凭据。恢复最多 1000 条 / 2 MB，替换当前用户数据；服务端校验模型、关联和预览版本后原子执行。ID 与创建时间保留，更新时间/版本刷新；任一约束失败整体回滚。请先导出当前备份。
+备份格式 `lifehub-backup` version 3，以 scope 声明全部 / 待办日程 / 消费预算 / 学习 / 习惯 / 收藏 / 首页配置；兼容 V2 完整备份。不包含 owner_id、登录凭据、站点权限或操作回执。最多 1000 条 / 2 MB；导出过大时要求缩小范围，不生成无法导入的文件。默认合并仅新增，内容冲突阻止执行；替换须核对并明确确认，只作用于文件范围。服务端预览绑定账户、内容摘要和 revision，10 分钟有效；确认时再次检查并原子执行，同一方案重试不重复应用。ID 与创建时间保留，替换刷新版本；历史冲突或并发变化不会覆盖数据。备份为未加密 JSON，请安全保管。详见 [备份恢复说明](docs/PHASE6-ACCEPTANCE.md)。
 
 第五阶段起，恢复还会保护现有打卡及其变更/规则历史；缺少完整历史的旧备份会被拒绝，请使用最新备份。已有打卡的习惯通过归档保留历史，打卡撤销不物理删除。
 
@@ -79,14 +84,18 @@ npm run check
 ```text
 app/                    受身份保护的页面与 records / restore API
 lib/domain.ts           十类模型、字段验证、关联与备份规则
-lib/records-service.ts  身份/所有权、CRUD、并发与原子恢复
+lib/auth-service.ts     身份/来源/数据空间校验及安全错误
+lib/state-service.ts    一致的记录/revision/撤销快照
+lib/records-service.ts  必需操作 ID、业务写入路由
+lib/backup-service.ts   分范围导出、服务端预览与原子恢复
 lib/planner-service.ts  待办/日程事务、重复生成、单步撤销与请求去重
 lib/finance-service.ts  收支/预算事务、版本和请求去重
 lib/life-service.ts     学习/习惯/收藏事务、历史保护与请求去重
 app/api/finance/export  按身份隔离的财务导出
 db/schema.ts            D1 / Drizzle schema
 drizzle/                已审核的 schema 迁移和元数据
-public/js/store.js      客户端统一数据访问层
+public/js/store.js      客户端数据访问、去重重试和账户切换保护
+public/js/sync.js       前台版本轮询与失败退避
 public/js/selectors.js  真实首页统计
 public/js/forms.js      统一新增/编辑表单
 public/js/views.js      首页、列表与设置
